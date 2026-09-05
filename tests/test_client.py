@@ -4462,12 +4462,16 @@ def test_task11_service_has_exact_public_api() -> None:
         if not name.startswith("_") and callable(value)
     }
 
-    assert public_methods == {"read", "create", "replace_markdown", "edit_text"}
+    assert public_methods == {"read", "create", "replace_markdown", "edit_text", "insert_text"}
     assert tuple(inspect.signature(service_type).parameters) == (
         "client",
         "recovery_root",
     )
     expected_parameters = {
+        "insert_text": (
+            "self", "document", "text", "expected_revision_id", "position",
+            "anchor_text", "tab_id", "format_profile", "apply",
+        ),
         "read": ("self", "document", "tab_id", "start", "max_chars"),
         "create": ("self", "title", "markdown", "format_profile"),
         "replace_markdown": (
@@ -4507,6 +4511,13 @@ def test_task11_service_has_exact_public_api() -> None:
     assert edit_parameters["expected_revision_id"].default is inspect.Parameter.empty
     assert edit_parameters["tab_id"].default is None
     assert edit_parameters["apply"].default is False
+    insert_parameters = inspect.signature(service_type.insert_text).parameters
+    assert insert_parameters["expected_revision_id"].default is inspect.Parameter.empty
+    assert insert_parameters["position"].default == "end"
+    assert insert_parameters["anchor_text"].default is None
+    assert insert_parameters["tab_id"].default is None
+    assert insert_parameters["format_profile"].default == "persian"
+    assert insert_parameters["apply"].default is False
 
 
 def test_task10_actual_match_overflow_stops_at_bounded_sentinel(

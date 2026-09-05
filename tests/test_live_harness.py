@@ -12,7 +12,68 @@ import pytest
 import test_live_google as live
 
 
-def test_api_formatting_accepts_proto_json_zero_omission() -> None:
+@pytest.mark.parametrize("fault", [None, "preview_mutates", "apply_corrupts", "apply_revision",
+                                  "stale_mutates", "anchor_error_mutates"])
+def test_insertion_live_checks_detect_faults_and_cover_positions(fault):
+    prefix = "⟦NON_TEXT:sectionBreak⟧\n"
+    initial = prefix + f"{live._FINAL_ANCHOR} 🧪\nتأیید شد\n"
+    state = {"content": initial, "revision": "r0", "writes": []}
+
+    class Session:
+        async def call_tool(self, name, arguments):
+            result = {"ok": True, "verified": True, "revision_id": state["revision"],
+                      "content": state["content"]}
+            if name == "docs_insert_text":
+                if arguments["expected_revision_id"] != state["revision"]:
+                    if fault == "stale_mutates":
+                        state["content"] += "bad"
+                    result = {"ok": False, "error": {"code": "stale_revision"}}
+                elif arguments["anchor_text"] and state["content"].count(arguments["anchor_text"]) != 1:
+                    if fault == "anchor_error_mutates":
+                        state["content"] += "bad"
+                    result = {"ok": False, "error": {"code": "anchor_match_mismatch"}}
+                elif not arguments["apply"]:
+                    if fault == "preview_mutates":
+                        state["content"] += "bad"
+                    result = {"ok": True, "valid": True, "applied": False}
+                else:
+                    position, anchor, text = arguments["position"], arguments["anchor_text"], arguments["text"]
+                    state["writes"].append(position)
+                    if position == "start":
+                        # API index 1 is after the index-0 section marker,
+                        # which docs_read includes in its human-readable view.
+                        state["content"] = prefix + text + state["content"][len(prefix):]
+                    elif position == "end":
+                        state["content"] = state["content"][:-1] + text + "\n"
+                    else:
+                        replacement = text + anchor if position == "before" else anchor + text
+                        state["content"] = state["content"].replace(anchor, replacement)
+                    if fault == "apply_corrupts":
+                        state["content"] += "bad"
+                    state["revision"] += "x"
+                    result = {"ok": True, "verified": True, "applied": True,
+                              "formatting_verified": arguments["format_profile"] == "persian",
+                              "after_revision_id": "bad" if fault == "apply_revision" else state["revision"]}
+            return SimpleNamespace(isError=False, structuredContent=result)
+
+    exercise = live._exercise_insertions(Session(), "synthetic_doc_123", "tab1",
+                                        {"content": initial, "revision_id": "r0"})
+    if fault is None:
+        asyncio.run(exercise)
+        assert state["writes"] == ["start", "end", "before", "after"]
+    else:
+        with pytest.raises(live._CheckFailed):
+            asyncio.run(exercise)
+
+
+@pytest.mark.parametrize("reason", ["text readback mismatch", "revision readback mismatch", "revision unchanged"])
+def test_insertion_failure_diagnostics_are_safe_constants(reason):
+    assert str(live._CheckFailed(f"insertion apply: {reason}")) == f"insertion apply: {reason}"
+
+
+@pytest.mark.parametrize("require_heading_bold", [True, False])
+@pytest.mark.parametrize("bad_field", [None, "bold", "direction", "alignment", "indentStart", "weightedFontFamily"])
+def test_api_formatting_accepts_proto_json_zero_omission(require_heading_bold, bad_field) -> None:
     paragraphs = []
     for index in range(8):
         paragraphs.append({"paragraph": {
@@ -28,7 +89,40 @@ def test_api_formatting_accepts_proto_json_zero_omission() -> None:
     document = {"tabs": [{"documentTab": {"body": {"content": paragraphs}},
                           "tabProperties": {"tabId": "test-tab", "title": "Synthetic"}}]}
     client = SimpleNamespace(get_document=lambda _: document)
-    live._assert_api_persian_formatting(cast(Any, client), "synthetic_id", "test-tab")
+    if bad_field in {"bold", "weightedFontFamily"}:
+        paragraphs[0]["paragraph"]["elements"][0]["textRun"]["textStyle"].pop(bad_field)
+    elif bad_field is not None:
+        paragraphs[0]["paragraph"]["paragraphStyle"].pop(bad_field)
+    kwargs = {} if require_heading_bold else {"require_heading_bold": False}
+    if bad_field is None or (bad_field == "bold" and not require_heading_bold):
+        live._assert_api_persian_formatting(cast(Any, client), "synthetic_id", "test-tab", **kwargs)
+    else:
+        with pytest.raises(live._CheckFailed):
+            live._assert_api_persian_formatting(cast(Any, client), "synthetic_id", "test-tab", **kwargs)
+
+
+@pytest.mark.parametrize("require_heading_bold", [True, False])
+@pytest.mark.parametrize("fault", [None, "bold", "bidi_paragraphs", "right_aligned_paragraphs",
+                                  "right_indented_paragraphs", "vazirmatn_runs", "unknown_reason"])
+def test_docx_insertion_waives_only_heading_bold(require_heading_bold, fault):
+    formatting = {
+        "valid": True, "reasons": [], "paragraphs": 12, "bidi_paragraphs": 12,
+        "right_aligned_paragraphs": 12, "right_indented_paragraphs": 12,
+        "text_runs": 56, "vazirmatn_runs": 56, "heading_runs": 7, "bold_heading_runs": 7,
+    }
+    if fault == "bold":
+        formatting.update(valid=False, reasons=["heading_bold_missing"], bold_heading_runs=5)
+    elif fault == "unknown_reason":
+        formatting.update(valid=False, reasons=["synthetic_unknown"])
+    elif fault is not None:
+        # Independently reject bad coverage even if the envelope claims valid.
+        formatting[fault] -= 1
+    kwargs = {} if require_heading_bold else {"require_heading_bold": False}
+    if fault is None or (fault == "bold" and not require_heading_bold):
+        live._assert_docx_formatting(formatting, **kwargs)
+    else:
+        with pytest.raises(live._CheckFailed):
+            live._assert_docx_formatting(formatting, **kwargs)
 
 
 @pytest.mark.parametrize("extra", [
@@ -442,5 +536,5 @@ raise SystemExit(pytest.main(['tests/test_live_google.py', '-o', 'addopts=', '-p
     result = subprocess.run([sys.executable, "-c", script], cwd=live._ROOT,
                             env=environment, capture_output=True, text=True, timeout=30)
     assert result.returncode == 0
-    assert "1 skipped" in result.stdout
+    assert "2 skipped" in result.stdout
     assert "offline gate performed I/O" not in result.stdout + result.stderr

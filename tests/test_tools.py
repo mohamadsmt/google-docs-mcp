@@ -15,9 +15,14 @@ EXPECTED_TOOLS = [
     "docs_create",
     "docs_replace_markdown",
     "docs_edit_text",
+    "docs_insert_text",
 ]
 
 EXPECTED_PROPERTIES = {
+    "docs_insert_text": {
+        "document", "text", "expected_revision_id", "position", "anchor_text",
+        "tab_id", "format_profile", "apply",
+    },
     "docs_read": {"document", "tab_id", "start", "max_chars"},
     "docs_create": {"title", "markdown", "format_profile"},
     "docs_replace_markdown": {
@@ -37,6 +42,7 @@ EXPECTED_PROPERTIES = {
 }
 
 EXPECTED_REQUIRED = {
+    "docs_insert_text": {"document", "text", "expected_revision_id"},
     "docs_read": {"document"},
     "docs_create": {"title"},
     "docs_replace_markdown": {
@@ -48,6 +54,10 @@ EXPECTED_REQUIRED = {
 }
 
 EXPECTED_DEFAULTS = {
+    "docs_insert_text": {
+        "position": "end", "anchor_text": None, "tab_id": None,
+        "format_profile": "persian", "apply": False,
+    },
     "docs_read": {"tab_id": None, "start": 0, "max_chars": 30_000},
     "docs_create": {"markdown": "", "format_profile": "persian"},
     "docs_replace_markdown": {
@@ -93,7 +103,7 @@ def test_server_exposes_exact_tool_surface_and_closed_schemas() -> None:
             "type": "object",
         }
 
-    for name in ("docs_create", "docs_replace_markdown"):
+    for name in ("docs_create", "docs_replace_markdown", "docs_insert_text"):
         profile = tools[name].inputSchema["properties"]["format_profile"]
         assert profile["enum"] == ["persian", "plain"]
 

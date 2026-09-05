@@ -22,6 +22,7 @@ from google_docs_mcp.client import (
     GoogleDocsClient,
     load_credentials,
     select_tab,
+    verify_persian_docx,
 )
 from google_docs_mcp.markdown import (
     candidate_semantic,
@@ -88,6 +89,7 @@ _STAGES = frozenset({
     "Persian API verification", "DOCX verification", "edit verification", "preview",
     "apply", "sentinel edit", "sentinel read", "stale guard", "replace", "final read",
     "cleanup", "cleanup MCP read", "recovery", "semantic verification",
+    "docs_insert_text", "insertion preview", "insertion apply", "insertion stale", "insertion anchor",
 })
 _REASONS = frozenset({
     "acceptance check failed", "typed operation failed", "MCP transport failed",
@@ -95,6 +97,10 @@ _REASONS = frozenset({
     "document still exists", "ambiguous listing", "incomplete listing",
     "invalid creation time", "run document unresolved; private journal retained",
     "journal identity changed", "unexpected failure", "interrupted",
+    "text readback mismatch", "revision readback mismatch", "revision unchanged",
+    "invalid preview", "preview mutated document", "terminal newline missing",
+    "fixture not unique", "not applied", "format not verified", "revision missing",
+    "rejected operation mutated document",
 })
 
 
@@ -398,6 +404,8 @@ def _assert_api_persian_formatting(
     cleanup: GoogleDocsClient,
     document_id: str,
     tab_id: str,
+    *,
+    require_heading_bold: bool = True,
 ) -> None:
     selected: Any = None
     try:
@@ -459,7 +467,7 @@ def _assert_api_persian_formatting(
         named_style = paragraph_style.get("namedStyleType")
         if isinstance(named_style, str) and named_style.startswith("HEADING_"):
             heading_count += 1
-            for text_run in content_runs:
+            for text_run in content_runs if require_heading_bold else ():
                 text_style = text_run.get("textStyle")
                 _require(
                     isinstance(text_style, dict) and text_style.get("bold") is True,
@@ -470,11 +478,18 @@ def _assert_api_persian_formatting(
     _require(text_run_count >= len(paragraphs), "Persian API verification: run coverage missing")
 
 
-def _assert_docx_formatting(formatting: object) -> None:
+def _assert_docx_formatting(formatting: object, *, require_heading_bold: bool = True) -> None:
     _require(isinstance(formatting, dict), "DOCX verification: result missing")
     formatting = cast(dict[str, Any], formatting)
-    _require(formatting.get("valid") is True, "DOCX verification: invalid")
-    _require(formatting.get("reasons") == [], "DOCX verification: reasons present")
+    if require_heading_bold:
+        _require(formatting.get("valid") is True, "DOCX verification: invalid")
+        _require(formatting.get("reasons") == [], "DOCX verification: reasons present")
+    else:
+        # Literal insertion promises paragraph direction/alignment/indent and
+        # font, not Markdown's additional bold-heading publication policy.
+        reasons = formatting.get("reasons")
+        _require(reasons in ([], ["heading_bold_missing"]), "DOCX verification: reasons present")
+        _require(formatting.get("valid") is (not reasons), "DOCX verification: invalid")
     paragraphs = formatting.get("paragraphs")
     text_runs = formatting.get("text_runs")
     heading_runs = formatting.get("heading_runs")
@@ -508,10 +523,11 @@ def _assert_docx_formatting(formatting: object) -> None:
         and heading_runs > 0,
         "DOCX verification: heading coverage missing",
     )
-    _require(
-        formatting.get("bold_heading_runs") == heading_runs,
-        "DOCX verification: bold heading coverage incomplete",
-    )
+    if require_heading_bold:
+        _require(
+            formatting.get("bold_heading_runs") == heading_runs,
+            "DOCX verification: bold heading coverage incomplete",
+        )
 
 
 def _require_single_replacement(payload: dict[str, Any]) -> dict[str, Any]:
@@ -547,7 +563,77 @@ def _delete_and_verify(cleanup: GoogleDocsClient, document_id: str) -> None:
     _assert_deleted_directly(cleanup, document_id)
 
 
-async def _run_live_acceptance() -> _Outcome:
+async def _exercise_insertions(
+    session: ClientSession, document_id: str, tab_id: str, initial: dict[str, Any]
+) -> None:
+    """Exercise literal insertions using the same run-owned temporary document."""
+    text = _require_string(initial.get("content"), "insertion apply: missing text")
+    revision = _require_string(initial.get("revision_id"), "insertion apply: missing revision")
+    cases = (
+        ("start", None, "شروع🧪\n", "persian"),
+        ("end", None, "\nپایان🧪", "plain"),
+        ("before", _FINAL_ANCHOR, "پیش‌متن🧪 ", "persian"),
+        ("after", "تأیید شد", " تکمیل🧪", "plain"),
+    )
+    for position, anchor, addition, profile in cases:
+        arguments = {
+            "document": document_id, "tab_id": tab_id, "text": addition,
+            "expected_revision_id": revision, "position": position,
+            "anchor_text": anchor, "format_profile": profile, "apply": False,
+        }
+        preview = await _call(session, "docs_insert_text", arguments)
+        if preview.get("ok") is not True:
+            _require_ok(preview, "insertion preview")
+        _require(preview.get("valid") is True and preview.get("applied") is False,
+                 "insertion preview: invalid preview")
+        read_preview = await _call(session, "docs_read", {"document": document_id, "tab_id": tab_id})
+        _require_ok(read_preview, "docs_read preview")
+        _require(read_preview.get("content") == text and read_preview.get("revision_id") == revision,
+                 "insertion preview: preview mutated document")
+        if position == "start":
+            # docs_read renders the index-0 sectionBreak as a visible marker.
+            # Literal insertion at API index 1 belongs after that marker.
+            prefix = "⟦NON_TEXT:sectionBreak⟧\n"
+            if not text.startswith(prefix):
+                prefix = ""
+            expected = prefix + addition + text[len(prefix):]
+        elif position == "end":
+            _require(text.endswith("\n"), "insertion apply: terminal newline missing")
+            expected = text[:-1] + addition + "\n"
+        else:
+            _require(isinstance(anchor, str) and text.count(anchor) == 1,
+                     "insertion anchor: fixture not unique")
+            anchor = cast(str, anchor)
+            replacement = addition + anchor if position == "before" else anchor + addition
+            expected = text.replace(anchor, replacement)
+        applied = await _call(session, "docs_insert_text", {**arguments, "apply": True})
+        _require_ok(applied, "insertion apply")
+        _require(applied.get("applied") is True, "insertion apply: not applied")
+        if profile == "persian":
+            _require(applied.get("formatting_verified") is True, "insertion apply: format not verified")
+        next_revision = _require_string(applied.get("after_revision_id"), "insertion apply: revision missing")
+        _require(next_revision != revision, "insertion apply: revision unchanged")
+        stale = await _call(session, "docs_insert_text", {**arguments, "apply": True})
+        _require_error(stale, "stale_revision", "insertion stale")
+        read_applied = await _call(session, "docs_read", {"document": document_id, "tab_id": tab_id})
+        _require_ok(read_applied, "docs_read applied")
+        _require(read_applied.get("content") == expected, "insertion apply: text readback mismatch")
+        _require(read_applied.get("revision_id") == next_revision, "insertion apply: revision readback mismatch")
+        text, revision = expected, next_revision
+    for anchor in ("SYNTHETIC_MISSING_INSERT_ANCHOR", "🧪"):
+        rejected = await _call(session, "docs_insert_text", {
+            "document": document_id, "tab_id": tab_id, "text": "should not appear",
+            "expected_revision_id": revision, "position": "after", "anchor_text": anchor,
+            "format_profile": "plain", "apply": True,
+        })
+        _require_error(rejected, "anchor_match_mismatch", "insertion anchor")
+        read_rejected = await _call(session, "docs_read", {"document": document_id, "tab_id": tab_id})
+        _require_ok(read_rejected, "docs_read applied")
+        _require(read_rejected.get("content") == text and read_rejected.get("revision_id") == revision,
+                 "insertion anchor: rejected operation mutated document")
+
+
+async def _run_live_acceptance(*, include_insertions: bool = False) -> _Outcome:
     outcome = _Outcome()
     started = datetime.now(timezone.utc)
     title = "TEMP — Hermes Google Docs MCP acceptance — " + started.strftime("%Y%m%dT%H%M%S.%fZ")
@@ -785,7 +871,14 @@ async def _run_live_acceptance() -> _Outcome:
                         _require(anchor in final_text, "final read: semantic anchor missing")
                     _require(_SENTINEL not in final_text, "final read: sentinel not replaced")
                     _require(_EDITED_ANCHOR not in final_text, "final read: old content remains")
-                    _assert_api_persian_formatting(cleanup, document_id, tab_id)
+                    if include_insertions:
+                        await _exercise_insertions(session, document_id, tab_id, final_read)
+                        _assert_docx_formatting(verify_persian_docx(cleanup.export_file(
+                            document_id,
+                            "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                        )), require_heading_bold=False)
+                    formatting_options = {"require_heading_bold": False} if include_insertions else {}
+                    _assert_api_persian_formatting(cleanup, document_id, tab_id, **formatting_options)
                 except BaseException as error:
                     outcome.capture(error)
                     session_alive = isinstance(error, _CheckFailed) and not error.transport_failed
@@ -835,6 +928,21 @@ def test_live_google_docs_end_to_end_through_mcp(capfd, caplog) -> None:
     except BaseException as error:
         outcome.capture(error)
     # Never publish captured child/provider output, even when the test fails.
+    capfd.readouterr()
+    caplog.clear()
+    _finish(outcome)
+
+
+@pytest.mark.skipif(
+    not _LIVE_ENABLED,
+    reason="set RUN_GOOGLE_DOCS_MCP_LIVE=1 for destructive Google insertion acceptance",
+)
+def test_live_google_insertions_through_mcp(capfd, caplog) -> None:
+    outcome = _Outcome()
+    try:
+        outcome = asyncio.run(_run_live_acceptance(include_insertions=True))
+    except BaseException as error:
+        outcome.capture(error)
     capfd.readouterr()
     caplog.clear()
     _finish(outcome)

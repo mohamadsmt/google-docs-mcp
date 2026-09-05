@@ -48,6 +48,7 @@ only-include = [
   "src/google_docs_mcp/server.py",
   "tests/test_client.py",
   "tests/test_entrypoint.py",
+  "tests/test_insertion.py",
   "tests/test_live_google.py",
   "tests/test_live_harness.py",
   "tests/test_markdown.py",

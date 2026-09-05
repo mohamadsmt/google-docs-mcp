@@ -8,7 +8,7 @@ A small local **stdio MCP server** for native Google Docs: bounded reading, priv
 
 This is a community project, not an official Google or Nous Research product. The documented launcher requires Bash and a POSIX-style virtual environment; native Windows is not supported by these instructions. Persian formatting is the default; choose `format_profile="plain"` for documents that should not receive Persian formatting. There is no bundled OAuth client, login command, or hosted service.
 
-## Exactly four tools
+## Exactly five tools
 
 | Tool | Public arguments | Behavior |
 | --- | --- | --- |
@@ -16,6 +16,7 @@ This is a community project, not an official Google or Nous Research product. Th
 | `docs_create` | `title`, `markdown=""`, `format_profile="persian"` | Create a private native Google document; render and verify nonempty Markdown. |
 | `docs_replace_markdown` | `document`, `markdown`, `expected_revision_id`, `tab_id=null`, `format_profile="persian"` | Replace the selected tab's body while retaining the document ID. This is destructive, not an append or merge. |
 | `docs_edit_text` | `document`, `replacements`, `expected_revision_id`, `tab_id=null`, `apply=false` | Preview exact replacements; write only with `apply=true`. |
+| `docs_insert_text` | `document`, `text`, `expected_revision_id`, `position="end"`, `anchor_text=null`, `tab_id=null`, `format_profile="persian"`, `apply=false` | Preview or insert literal text at the start/end or before/after one exact anchor, without replacing the tab. |
 
 A replacement is `{"old_text":"…","new_text":"…","expected_count":1}`. Only `persian` and `plain` are valid profile names. Booleans and integer controls use strict MCP input types: pass JSON `false`/`true` and integers, not strings.
 
@@ -26,6 +27,7 @@ A replacement is `{"old_text":"…","new_text":"…","expected_count":1}`. Only 
 - `markdown`: at most 500000 characters, no NUL. Rendering also has request-count, payload-byte, and semantic-processing limits; a short but excessively fragmented input can still fail.
 - `max_chars`: 1–100000, default 30000. `start` must fall within the rendered content. Pagination uses character offsets, **not Google Docs UTF-16 indices**.
 - `replacements`: 1–100 entries; each `expected_count` is 1–100. `old_text` must be nonempty; `new_text` may be empty to delete text. Neither may contain NUL.
+- Insertion `text`: 1–500000 characters; literal text, not Markdown. Tabs/newlines and whitespace are preserved; no separator is added automatically. C0 controls except tab/newline, surrogate code points, and BMP private-use characters are rejected rather than allowing Google to strip them. Anchors are 1–500000 characters in a single contiguous paragraph text span; control characters and surrogate code points are rejected.
 - `expected_revision_id`: a nonempty Docs revision identifier, at most 1000 characters, no NUL. Copy it from a fresh read; it is not a Drive `version`.
 
 ## Markdown subset and non-goals
@@ -170,6 +172,33 @@ Apply rechecks the live revision and match counts; preview does not reserve the 
 
 An applied result reports `before_revision_id`, `after_revision_id`, and per-operation `occurrences_changed`, before/after old-text counts, and before/after new-text counts. All replacements use one revision-guarded `batchUpdate`. This path sends no additional formatting requests; Google Docs handles existing formatting during `replaceAllText`.
 
+### Insert text without replacing existing content
+
+After a fresh `docs_read`, call `docs_insert_text`. This synthetic example previews a new paragraph at the end of a selected tab:
+
+```json
+{
+  "document": "abcDEF_123-xyz",
+  "text": "\nیادداشت تکمیلی: این بند به سند موجود اضافه می‌شود.\n",
+  "expected_revision_id": "revision_example_1",
+  "position": "end",
+  "anchor_text": null,
+  "tab_id": "tab_example",
+  "format_profile": "persian",
+  "apply": false
+}
+```
+
+- `start` inserts at body index 1; `end` inserts immediately before the mandatory final newline. Both forbid `anchor_text`.
+- `before` / `after` require one exact, case-sensitive `anchor_text` match within a contiguous paragraph text span in the selected body or a table cell. Styled runs can form one match; an anchor cannot span paragraphs, cells, or inline objects. Repeated matches (including overlapping matches) fail with `anchor_match_mismatch`; provide a longer unique anchor rather than choosing an arbitrary occurrence.
+- Headers, footers, and footnotes are not insertion targets. The other tabs are never searched to resolve an anchor.
+- `text` is literal: `#`, `**`, and pipe syntax do not create headings, emphasis, or tables. Include your own spaces and `\n` separators. For example, inserting `note` after `word` produces `wordnote`, not `word note`.
+- Preview returns `applied=false`, `valid=true`, the reviewed `revision_id`, resolved UTF-16 `index`, and `inserted_utf16_length`. It does not change the document or reserve the position. Apply the same arguments with `apply=true`; the live revision and anchor are checked again.
+- Apply sends one atomic batch: `insertText` plus scoped styles when Persian is selected. It does not delete or replace existing content. The result includes `applied=true`, before/after revision IDs, and `verified=true` only after exact indexed body-text readback. `formatting_verified=true` additionally means the affected paragraph settings and inserted font passed API readback; insertion does not perform a whole-document DOCX audit.
+- `persian` sets RTL, explicit Right alignment, and right-side indentation on paragraphs touched by inserted text, and Vazirmatn on the inserted text. Existing text sharing those paragraphs shares their paragraph settings. Unrelated paragraphs are not reformatted. `plain` sends no formatting requests and inherits Google Docs formatting.
+
+A stale revision must be reread, not silently replaced with a fresh token. A transport or verification failure may occur after a successful write; reread before retrying to avoid duplicate insertion. This tool is not a Markdown merge or a layout-authoring API.
+
 ### Replace Markdown on the same document ID
 
 Read again after the edit:
@@ -203,7 +232,7 @@ A non-table replacement uses one atomic mutation batch. Tables require several g
 
 - For a single tab, omission of `tab_id` selects that tab automatically.
 - For multiple tabs, `docs_read` without `tab_id` returns metadata and the tab inventory only — no `content`, pagination, or selected-tab outline. Select a returned tab ID and read again.
-- Both existing-document write tools require an explicit `tab_id` for a multi-tab document. They fail closed with `multiple_tabs_require_tab_id` rather than writing to the first tab. An unknown tab produces `tab_not_found`.
+- All existing-document write tools require an explicit `tab_id` for a multi-tab document. They fail closed with `multiple_tabs_require_tab_id` rather than writing to the first tab. An unknown tab produces `tab_not_found`.
 - `tab_id` is a separate argument: a URL fragment does not choose the write target. Revisions guard the document, not just an isolated tab.
 
 ## Persian and plain profiles
@@ -312,7 +341,7 @@ If you do not already have a compatible token, provisioning one is a separate pr
 
 The token and recovery paths are currently fixed under `Path.home() / ".hermes"`; setting `HERMES_HOME` or selecting a Hermes profile does not relocate them. Run under the intended OS account. You can install and run the offline tests without any Google credentials.
 
-Use an account authorized for the intended documents and Docs/Drive operations. Existing OAuth grants may be broader than the four-tool surface; this server constrains its operations, not the token's global privileges. Keep both files out of source control, tool examples, logs, and config literals. Do not share full environment/config dumps to diagnose startup.
+Use an account authorized for the intended documents and Docs/Drive operations. Existing OAuth grants may be broader than the five-tool surface; this server constrains its operations, not the token's global privileges. Keep both files out of source control, tool examples, logs, and config literals. Do not share full environment/config dumps to diagnose startup.
 
 The package has no telemetry and sanitizes service errors rather than returning raw Google responses or credentials. Document content is still deliberately returned by `docs_read` and sent to Google for writes; Hermes/session retention and storage backups are separate from this package's recovery cleanup policy.
 
@@ -426,10 +455,12 @@ Only run this when you authorize real Google API writes and the final source has
 ```bash
 cd ~/Documents/google-docs-mcp
 env -u PYTHONPATH -u PYTHONHOME RUN_GOOGLE_DOCS_MCP_LIVE=1 \
-  .venv/bin/python -m pytest tests/test_live_google.py -v
+  .venv/bin/python -m pytest tests/test_live_google.py::test_live_google_insertions_through_mcp -v
 ```
 
 The live test uses real MCP `ClientSession.call_tool` calls through `scripts/run-mcp`. It creates a tiny private temporary document with synthetic Persian/English/emoji content, reads it, proves preview is non-mutating, applies an edit with independent readback, then injects an **external sentinel edit**. A stale replacement must fail without erasing that sentinel. It then replaces with a fresh revision, checks semantics and Persian API/DOCX formatting, deletes only the run's temporary document, and checks 404. Privacy is independently checked through bounded Drive permission readback in the harness; permission management is not exposed by the MCP.
+
+The insertion acceptance above additionally exercises all four insertion positions on that same run-owned document, including a table-cell anchor and mixed Persian/English/emoji content. Each position proves non-mutating preview, independent exact text/revision readback, and stale-revision rejection; missing and ambiguous anchors must also leave the document unchanged. Persian API/DOCX checks after insertion require direction, right alignment, right indentation, and Vazirmatn; they do not impose Markdown's additional bold-heading rule on literal inserted text. Create/replace checks retain that stricter publication rule. The separate `test_live_google_docs_end_to_end_through_mcp` retains the original create/edit/replace regression; running the entire module creates and deletes one temporary document per test.
 
 The harness attempts cleanup on failures and interrupts, but successful cleanup is an assertion to verify, not a promise that survives every network failure or forced process termination. It keeps a private per-run journal when the created document cannot be resolved safely. Resolve only that exact run's artifact/document; do not prefix-sweep other documents or recovery backups. Keep live IDs, URLs, credentials, and private content out of published test reports. A skipped test is not live acceptance, and old evidence does not validate changed code.
 
@@ -457,7 +488,7 @@ If it already exists, inspect that entry and update its existing launcher/policy
 hermes config set --force mcp_servers.google_docs.timeout 180
 hermes config set --force mcp_servers.google_docs.connect_timeout 30
 hermes config set --force mcp_servers.google_docs.sampling.enabled false
-hermes config set --force mcp_servers.google_docs.tools.include '["docs_read","docs_create","docs_replace_markdown","docs_edit_text"]'
+hermes config set --force mcp_servers.google_docs.tools.include '["docs_read","docs_create","docs_replace_markdown","docs_edit_text","docs_insert_text"]'
 ```
 
 The resulting `~/.hermes/config.yaml` entry must match this policy; merge only this server entry, not the whole config:
@@ -477,16 +508,17 @@ mcp_servers:
         - docs_create
         - docs_replace_markdown
         - docs_edit_text
+        - docs_insert_text
 ```
 
-No credential literals or secret environment values belong in this entry. Read back the exact target entry locally after registration: confirm the launcher, empty args, timeout 180, connect timeout 30, disabled sampling, and exactly the four allowlisted names. Check an existing entry for exclusions or other policy that could prevent those tools from being exposed. Share only safe policy fields and environment **key names**, never values or a full config dump.
+No credential literals or secret environment values belong in this entry. Read back the exact target entry locally after registration: confirm the launcher, empty args, timeout 180, connect timeout 30, disabled sampling, and exactly the five allowlisted names. Check an existing entry for exclusions or other policy that could prevent those tools from being exposed. Share only safe policy fields and environment **key names**, never values or a full config dump.
 
 ```bash
 hermes mcp list
 hermes mcp test google_docs
 ```
 
-Require the server to be enabled, connection/discovery to succeed, and exactly the four expected tools to be discovered. `hermes mcp test` proves discovery, not create/edit/replace correctness; the opt-in live test provides the separate call-path check.
+Require the server to be enabled, connection/discovery to succeed, and exactly the five expected tools to be discovered. `hermes mcp test` proves discovery, not Google write correctness. The opt-in insertion acceptance separately checks all five tool paths against Google; offline tests alone are not proof of a live insertion.
 
 After registration or an update, use **`/reload-mcp`** in the running Hermes chat, or start a fresh Hermes chat/process. Then verify the tool inventory. An existing long-lived session is not automatically proven to have new schemas merely because config was saved or a separate CLI test passed. Hermes normally prefixes server tools as `mcp_google_docs_<tool_name>`; use the actual discovered inventory in your client.
 

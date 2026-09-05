@@ -1641,6 +1641,8 @@ class GoogleDocsClient:
         document_id: str,
         requests: list[dict],
         revision: str,
+        *,
+        retry_safe: bool = True,
     ) -> dict:
         normalized_id = parse_document_id(document_id)
         if not requests:
@@ -1648,6 +1650,7 @@ class GoogleDocsClient:
         response = self._request(
             "POST",
             f"{self.DOCS_BASE}/documents/{normalized_id}:batchUpdate",
+            retry_safe=retry_safe,
             json={
                 "requests": requests,
                 "writeControl": {"requiredRevisionId": revision},
@@ -2720,11 +2723,16 @@ def _service_batch_revision(
     document_id: str,
     requests: list[dict],
     revision_id: str,
+    *,
+    retry_safe: bool = True,
 ) -> str:
     response: dict | None = None
     failed = False
     try:
-        value = client.batch_update(document_id, requests, revision_id)
+        if retry_safe:
+            value = client.batch_update(document_id, requests, revision_id)
+        else:
+            value = client.batch_update(document_id, requests, revision_id, retry_safe=False)
         if isinstance(value, dict):
             response = value
         else:
@@ -2775,7 +2783,9 @@ def _service_semantic_result(
     }
 
 
-def _verify_persian_api(body: dict) -> None:
+def _verify_persian_api(
+    body: dict, *, start_index: int | None = None, end_index: int | None = None
+) -> None:
     """Check the same revision's body/cells, independently of DOCX export."""
     failed = False
     try:
@@ -2804,6 +2814,17 @@ def _verify_persian_api(body: dict) -> None:
                 children, child_kind = node["table"]["tableRows"], "row"
             elif "paragraph" in node:
                 paragraph = node["paragraph"]
+                elements = paragraph["elements"]
+                if not isinstance(elements, list) or not elements:
+                    raise ValueError
+                if start_index is not None and end_index is not None:
+                    elements = [
+                        element for element in elements
+                        if element["startIndex"] < end_index
+                        and element["endIndex"] > start_index
+                    ]
+                    if not elements:
+                        continue
                 style = paragraph["paragraphStyle"]
                 if style.get("direction") != "RIGHT_TO_LEFT" or style.get("alignment") != "END":
                     raise ValueError
@@ -2812,9 +2833,6 @@ def _verify_persian_api(body: dict) -> None:
                     magnitude = indent.get("magnitude", 0)
                     if (type(magnitude) not in (int, float) or magnitude != 0 or indent.get("unit") != "PT"):
                         raise ValueError
-                elements = paragraph["elements"]
-                if not isinstance(elements, list) or not elements:
-                    raise ValueError
                 for element in elements:
                     visited += 1
                     if visited > _MAX_RENDER_NODES:
@@ -2823,11 +2841,13 @@ def _verify_persian_api(body: dict) -> None:
                     text_style = run["textStyle"]
                     if text_style["weightedFontFamily"].get("fontFamily") != "Vazirmatn":
                         raise ValueError
-                    if (style.get("namedStyleType") in _HEADING_LEVELS
+                    if (start_index is None and style.get("namedStyleType") in _HEADING_LEVELS
                             and run["content"].strip()
                             and text_style.get("bold") is not True):
                         raise ValueError
                 continue
+            elif start_index is not None and "tableOfContents" in node:
+                children, child_kind = node["tableOfContents"]["content"], "content"
             elif "sectionBreak" in node:
                 continue
             else:
@@ -2892,6 +2912,165 @@ def _service_semantic_readback(
             "Google Docs tab verification failed.",
         )
     return _service_semantic_result(model, selected.body, profile), selected.body
+
+
+def _invalid_insertion() -> DocsMCPError:
+    return DocsMCPError(
+        "invalid_input", "Invalid text insertion arguments or unsupported insertion boundary."
+    )
+
+
+def _validate_insertion(
+    text: object, position: object, anchor_text: object,
+    tab_id: object, format_profile: object, apply: object,
+) -> None:
+    # Google strips these controls/private-use characters during insertText.
+    # Reject rather than silently normalize an exact-text write.
+    if (
+        not isinstance(text, str) or not 1 <= len(text) <= 500_000
+        or re.search(r"[\x00-\x08\x0b-\x1f\ud800-\udfff\ue000-\uf8ff]", text)
+        or not isinstance(position, str) or position not in {"start", "end", "before", "after"}
+        or not isinstance(format_profile, str) or format_profile not in {"persian", "plain"}
+        or type(apply) is not bool
+        or (tab_id is not None and (not isinstance(tab_id, str) or not tab_id or "\x00" in tab_id))
+    ):
+        raise _invalid_insertion()
+    if position in {"before", "after"}:
+        if (
+            not isinstance(anchor_text, str) or not 1 <= len(anchor_text) <= 500_000
+            or re.search(r"[\x00-\x1f\ud800-\udfff]", anchor_text)
+        ):
+            raise _invalid_insertion()
+    elif anchor_text is not None:
+        raise _invalid_insertion()
+
+
+def _insertion_segments(body: dict) -> tuple[_EditSegment, ...]:
+    result = None
+    try:
+        # Deliberately exclude headers, footers, and footnotes from targeting.
+        result = _collect_edit_segments({"body": body})
+    except Exception:
+        pass
+    if result is None:
+        raise _google_unavailable()
+    return result
+
+
+def _is_first_paragraph_boundary(node: dict) -> bool:
+    """Validate the fallback for a paragraph beginning with non-text content."""
+    start, end = node.get("startIndex"), node.get("endIndex")
+    paragraph = node.get("paragraph")
+    if type(start) is not int or start != 1 or type(end) is not int or end < 2:
+        return False
+    if not isinstance(paragraph, dict):
+        return False
+    elements = paragraph.get("elements")
+    if not isinstance(elements, list) or not elements:
+        return False
+    cursor = start
+    for element in elements:
+        if not isinstance(element, dict):
+            return False
+        left, right = element.get("startIndex"), element.get("endIndex")
+        if type(left) is not int or type(right) is not int or left != cursor or not left < right <= end:
+            return False
+        if not any(isinstance(element.get(kind), dict) for kind in ("textRun", *_KNOWN_NON_TEXT_KINDS)):
+            return False
+        cursor = right
+    terminal = elements[-1].get("textRun")
+    return (
+        cursor == end and isinstance(terminal, dict)
+        and isinstance(terminal.get("content"), str) and terminal["content"].endswith("\n")
+    )
+
+
+def _insertion_index(
+    body: dict, segments: tuple[_EditSegment, ...], position: str, anchor_text: str | None
+) -> int:
+    if position == "start":
+        index = 1
+    elif position == "end":
+        index = _service_end_index(body) - 1
+    else:
+        assert anchor_text is not None
+        matches: list[int] = []
+        for segment in segments:
+            offset = 0
+            while True:
+                match = segment.text.find(anchor_text, offset)
+                if match < 0:
+                    break
+                end = match + len(anchor_text) if position == "after" else match
+                matches.append(segment.start_index + utf16_index(segment.text, end))
+                if len(matches) > 1:
+                    break
+                # Count overlapping matches too: 'aa' in 'aaa' is ambiguous.
+                offset = match + 1
+            if len(matches) > 1:
+                break
+        if len(matches) != 1:
+            raise DocsMCPError(
+                "anchor_match_mismatch", "The selected body must contain exactly one anchor match."
+            )
+        index = matches[0]
+    text_boundary = any(
+        segment.start_index <= index <= segment.start_index + utf16_length(segment.text)
+        for segment in segments
+    )
+    # An image-first paragraph still has a legal insertion boundary at 1.
+    paragraph_start = position == "start" and any(
+        _is_first_paragraph_boundary(node)
+        for node in body["content"]
+    )
+    if not 1 <= index < _service_end_index(body) or not (text_boundary or paragraph_start):
+        raise _invalid_insertion()
+    return index
+
+
+def _insertion_snapshot(
+    segments: tuple[_EditSegment, ...], *, index: int | None = None, text: str = ""
+) -> tuple[tuple[int, bytes], ...]:
+    """Compare indexed text, allowing Google's paragraph/style-run splitting.
+
+    Gaps for tables and inline objects remain significant. Byte slicing uses
+    UTF-16 boundaries already resolved from the exact anchor, not user indices.
+    """
+    if sum(len(segment.text) for segment in segments) + len(text) > _MAX_RENDER_CHARS:
+        raise _invalid_insertion()
+    if index is not None and segments and index < segments[0].start_index:
+        # Insert before a leading inline object; retain the object's index gap.
+        segments = (_EditSegment("", index, ""), *segments)
+    inserted = text.encode("utf-16-le")
+    delta = len(inserted) // 2
+    groups: list[tuple[int, bytes]] = []
+    parts: list[bytes] = []
+    group_start = previous_end = 0
+    insertion_done = False
+    for segment in segments:
+        start = segment.start_index
+        payload = segment.text.encode("utf-16-le")
+        if index is not None:
+            if not insertion_done and start <= index <= start + len(payload) // 2:
+                offset = (index - start) * 2
+                payload = payload[:offset] + inserted + payload[offset:]
+                insertion_done = True
+            elif start >= index:
+                start += delta
+        if parts and start < previous_end:
+            raise _google_unavailable()
+        if not parts or start != previous_end:
+            if parts:
+                groups.append((group_start, b"".join(parts)))
+            group_start = start
+            parts = []
+        parts.append(payload)
+        previous_end = start + len(payload) // 2
+    if parts:
+        groups.append((group_start, b"".join(parts)))
+    if index is not None and not insertion_done:
+        raise _invalid_insertion()
+    return tuple(groups)
 
 
 class GoogleDocsService:
@@ -3175,6 +3354,77 @@ class GoogleDocsService:
             "format_profile": profile,
             "formatting": formatting,
             "verified": True,
+        }
+
+    def insert_text(
+        self,
+        document: str,
+        text: str,
+        expected_revision_id: str,
+        position: str = "end",
+        anchor_text: str | None = None,
+        tab_id: str | None = None,
+        format_profile: str = "persian",
+        apply: bool = False,
+    ) -> dict[str, object]:
+        from . import markdown as markdown_module
+
+        document_id = parse_document_id(document)
+        revision = _validate_service_revision(expected_revision_id)
+        _validate_insertion(text, position, anchor_text, tab_id, format_profile, apply)
+        metadata = _service_metadata(self._client, document_id)
+        _require_native_document(metadata)
+        before = _service_document(self._client, document_id)
+        if before["revisionId"] != revision:
+            raise DocsMCPError(
+                "stale_revision", "The Google document revision does not match the expected revision."
+            )
+        selected = select_tab(before, tab_id)
+        if selected is None:
+            raise _multiple_tabs_require_tab_id()
+        if not selected.tab_id:
+            raise _tab_not_found()
+        segments = _insertion_segments(selected.body)
+        index = _insertion_index(selected.body, segments, position, anchor_text)
+        expected = _insertion_snapshot(segments, index=index, text=text)
+        end_index = index + utf16_length(text)
+        requests = [{"insertText": {
+            "location": {"index": index, "tabId": selected.tab_id}, "text": text,
+        }}]
+        if format_profile == "persian":
+            paragraph = markdown_module.paragraph_style_request(end_index, selected.tab_id)
+            assert paragraph is not None
+            paragraph["updateParagraphStyle"]["range"]["startIndex"] = index
+            requests.extend([paragraph, {"updateTextStyle": {
+                "range": {"startIndex": index, "endIndex": end_index, "tabId": selected.tab_id},
+                "textStyle": {"weightedFontFamily": {"fontFamily": "Vazirmatn"}},
+                "fields": "weightedFontFamily",
+            }}])
+        markdown_module._enforce_request_plan(requests)
+        result: dict[str, object] = {
+            "ok": True, "document_id": document_id, "document_url": metadata["webViewLink"],
+            "tab_id": selected.tab_id, "position": position, "index": index,
+            "inserted_utf16_length": end_index - index, "format_profile": format_profile,
+            "applied": apply,
+        }
+        if not apply:
+            return {**result, "revision_id": revision, "valid": True}
+        after_revision = _service_batch_revision(
+            self._client, document_id, requests, revision, retry_safe=False
+        )
+        after = _service_document(self._client, document_id)
+        after_tab = select_tab(after, selected.tab_id)
+        if (
+            after["revisionId"] != after_revision or after_tab is None
+            or _insertion_snapshot(_insertion_segments(after_tab.body)) != expected
+            or _service_end_index(after_tab.body) != _service_end_index(selected.body) + utf16_length(text)
+        ):
+            raise DocsMCPError("verification_failed", "Google Docs insertion readback could not be verified.")
+        if format_profile == "persian":
+            _verify_persian_api(after_tab.body, start_index=index, end_index=end_index)
+        return {
+            **result, "before_revision_id": revision, "after_revision_id": after_revision,
+            "verified": True, "formatting_verified": format_profile == "persian",
         }
 
     def edit_text(

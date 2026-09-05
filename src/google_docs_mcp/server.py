@@ -179,6 +179,33 @@ def docs_edit_text(
     return _call_service(operation)
 
 
+@mcp.tool(
+    name="docs_insert_text",
+    structured_output=True,
+    annotations=_WRITE_ANNOTATIONS,
+)
+def docs_insert_text(
+    document: str,
+    text: str,
+    expected_revision_id: str,
+    position: Literal["start", "end", "before", "after"] = "end",
+    anchor_text: str | None = None,
+    tab_id: str | None = None,
+    format_profile: Literal["persian", "plain"] = "persian",
+    apply: StrictBool = False,
+) -> dict[str, object]:
+    """Preview/apply plain-text insertion without replacing the tab. Before/after
+    require one exact paragraph anchor; start/end forbid it. No separators are
+    added. Persian styles touch inserted text/paragraphs; plain inherits styles.
+    """
+    return _call_service(
+        lambda: _get_service().insert_text(
+            document, text, expected_revision_id, position=position,
+            anchor_text=anchor_text, tab_id=tab_id, format_profile=format_profile, apply=apply,
+        )
+    )
+
+
 def main() -> None:
     try:
         _prepare_runtime()

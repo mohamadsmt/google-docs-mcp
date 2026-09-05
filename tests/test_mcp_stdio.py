@@ -14,6 +14,7 @@ EXPECTED_TOOLS = [
     "docs_create",
     "docs_replace_markdown",
     "docs_edit_text",
+    "docs_insert_text",
 ]
 
 
