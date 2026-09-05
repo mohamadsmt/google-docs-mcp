@@ -120,6 +120,8 @@ Synthetic response excerpt — not the complete response:
 
 The readable body key is **`content`, not `text`**. Selected-tab responses also include `start`, `end`, `total_chars`, and `outline`. Follow `next_start` with the same document and tab until it is `null`; if revisions change between pages, reread rather than treating the pages as one snapshot.
 
+**Privacy boundary:** `max_chars` limits only the returned `content` page, not the complete response. The selected tab's entire heading `outline`, document metadata, and tab inventory are returned separately and are not restricted to that page. Even a one-character page can reveal headings outside the requested range. Do not use pagination as a total-output limit or as permission to disclose only one excerpt.
+
 Metadata fields are `document_id`, `document_url`, `name`, `mime_type`, `modified_time`, `version`, and `revision_id`. Each `tabs` entry contains `tab_id`, `title`, and `parent_tab_id`.
 
 Reading produces plain readable paragraph text, a separate heading outline, and Markdown-like pipe tables. It does not reconstruct all source Markdown or preserve every style. Unsupported non-text elements are represented with markers such as `⟦NON_TEXT:inlineObjectElement⟧`. Do not feed readback blindly into a full replacement when the document contains content the renderer cannot reproduce.
