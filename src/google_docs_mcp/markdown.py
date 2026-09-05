@@ -397,6 +397,12 @@ def _parse_inline(source: str) -> InlineContent:
     text = "".join(output_parts)
     if _RESERVED_TABLE_MARKER_RE.search(text) is not None:
         raise _reserved_table_marker_error()
+    # InsertText strips these characters; later UTF-16 style ranges would drift.
+    # Check emitted text so ignored frontmatter and CRLF normalization still work.
+    if re.search(r"[\x00-\x08\x0c-\x1f\ud800-\udfff\ue000-\uf8ff]", text):
+        raise DocsMCPError(
+            "invalid_markdown", "Markdown emits characters unsupported by Google Docs."
+        )
 
     return InlineContent(
         text=text,
@@ -905,6 +911,10 @@ def _remote_text_runs(
         raise TypeError
 
     runs: list[_SEMANTIC_RUN] = []
+    # Our subset uses literal glyphs, never native lists. Preserve even an empty
+    # list paragraph as unsupported instead of blessing visually different output.
+    if "bullet" in paragraph:
+        _append_unsupported_run(runs, "paragraph:bullet", budget)
     for element in elements:
         budget.add_nodes()
         if not isinstance(element, dict):
@@ -1515,7 +1525,7 @@ def replacement_requests(
         (1 if end_index > 2 else 0)
         + (1 if insert_text else 0)
         + inline_count
-        + (2 if model.text else 0)
+        + (3 if model.text else 0)
     )
     if profile == "persian" and model.text:
         request_count += 2 + _heading_request_count(model)
@@ -1552,6 +1562,9 @@ def replacement_requests(
     # Apply named styles first and explicit emphasis only after final defaults.
     content_end = 1 + client.utf16_length(model.text)
     content_range = {"startIndex": 1, "endIndex": content_end, "tabId": tab_id}
+    # The retained final paragraph can carry a native list into the new text.
+    # Removal adds nesting indentation, so do it before final profile styling.
+    requests.append({"deleteParagraphBullets": {"range": dict(content_range)}})
     requests.append({
         "updateParagraphStyle": {
             "range": dict(content_range),

@@ -68,8 +68,23 @@ Additional normalization matters when preparing a write:
 - Backslash escapes are consumed; line endings are normalized. Unmatched or unsupported constructs are not universally rejected or preserved verbatim. They pass through the line/inline parser, so supported syntax inside them can still be interpreted.
 - Italics, underscore-based bold, strikethrough, ordered/nested/native lists, blockquotes, fenced-code semantics, HTML rendering, images, and rich embeds are not supported features. Image-like syntax does not upload an image; its link portion may still be parsed. A fenced block does not protect internal headings or emphasis from parsing.
 - Non-HTTP(S) link destinations are not turned into links. Reserved internal table-marker syntax is rejected with `invalid_markdown`.
+- Emitted body and table-cell text containing characters that Google `insertText` strips (U+0000–U+0008, U+000C–U+001F, U+E000–U+F8FF), or surrogate code points, is rejected before creation/replacement. This does not change CRLF normalization, ignored frontmatter, or valid Persian half-spaces/emoji.
+- Nonempty Markdown replacement removes inherited native bullets/numbering before applying the selected profile. Markdown bullets/checklists remain literal glyphs. Semantic verification rejects unexpected native lists, including empty paragraphs and table cells. Empty-model replacement retains its no-style-write behavior; this is not a general native-list editing tool.
 
 There are no public tools for arbitrary `batchUpdate`, arbitrary HTTP, sharing/permission changes, deletion, comments, suggestions, named-range workflows, Office conversion, image upload, or free-form table/section/header/footer editing. The internal cleanup/export helpers are not MCP tools. `docs_edit_text` can count and replace matching existing text within the selected tab's body/table cells and auxiliary header/footer/footnote segments; that is not a layout or segment-authoring API.
+
+### Why not Drive's native Markdown conversion?
+
+Google Drive officially supports importing `text/markdown` to `application/vnd.google-apps.document`. This server still uses its explicit Docs request renderer: Drive import-update replaces the entire document, not just the selected tab, and the importer is not output-equivalent to our documented subset or Persian profile. A synthetic live characterization produced native headings, bold text, links, lists and a table, but no explicit RTL paragraphs or Vazirmatn runs. This is not a claim that native import can never be useful; it needs a separately defined import contract rather than a silent backend swap.
+
+See [the API audit](docs/native-api-audit.md) for all Request categories, adoption decisions and evidence. The opt-in characterization and inherited-list regressions reuse the existing live-test cleanup helpers:
+
+```bash
+env -u PYTHONPATH -u PYTHONHOME RUN_GOOGLE_DOCS_MCP_LIVE=1 \
+  .venv/bin/python -m pytest tests/test_native_api.py -v -s
+```
+
+Run only after explicitly authorizing private synthetic temporary Google documents and their deletion. A passing characterization proves conversion and cleanup, not equality with the current renderer. No import method or general-purpose API proxy is exposed through MCP.
 
 ## Read first, then write with the revision you reviewed
 

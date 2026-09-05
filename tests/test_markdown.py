@@ -630,6 +630,9 @@ def test_task7_persian_replacement_is_one_exact_ordered_request_plan() -> None:
                 "text": "😀 H\n😀 B\n😀 L",
             }
         },
+        {"deleteParagraphBullets": {
+            "range": {"startIndex": 1, "endIndex": 16, "tabId": "t.1"},
+        }},
         {
             "updateParagraphStyle": {
                 "range": {"startIndex": 1, "endIndex": 16, "tabId": "t.1"},
@@ -713,6 +716,9 @@ def test_task7_plain_profile_omits_profile_formatting_but_keeps_semantics() -> N
                 "text": "😀 H\n😀 B\n😀 L",
             }
         },
+        {"deleteParagraphBullets": {
+            "range": {"startIndex": 1, "endIndex": 16, "tabId": "plain-tab"},
+        }},
         {
             "updateParagraphStyle": {
                 "range": {"startIndex": 1, "endIndex": 16, "tabId": "plain-tab"},
@@ -830,6 +836,9 @@ def test_task7_empty_models_and_zero_length_semantic_ranges_are_safe() -> None:
                 "text": "abc",
             }
         },
+        {"deleteParagraphBullets": {
+            "range": {"startIndex": 1, "endIndex": 4, "tabId": "zero-tab"},
+        }},
         {
             "updateParagraphStyle": {
                 "range": {"startIndex": 1, "endIndex": 4, "tabId": "zero-tab"},
@@ -963,6 +972,9 @@ def test_task7_table_marker_text_is_inserted_without_table_orchestration() -> No
                 "text": marker,
             }
         },
+        {"deleteParagraphBullets": {
+            "range": {"startIndex": 1, "endIndex": 14, "tabId": "table-tab"},
+        }},
         {
             "updateParagraphStyle": {
                 "range": {"startIndex": 1, "endIndex": 14, "tabId": "table-tab"},
@@ -1067,6 +1079,9 @@ def test_task7_multiple_matching_table_markers_remain_a_flat_no_table_plan() -> 
                 "text": text[:-1],
             }
         },
+        {"deleteParagraphBullets": {
+            "range": {"startIndex": 1, "endIndex": 32, "tabId": "matching-table-tab"},
+        }},
         {
             "updateParagraphStyle": {
                 "range": {"startIndex": 1, "endIndex": 32, "tabId": "matching-table-tab"},
@@ -1224,6 +1239,9 @@ def test_task7_manual_non_newline_text_preserves_its_last_character() -> None:
                 "text": model.text,
             }
         },
+        {"deleteParagraphBullets": {
+            "range": {"startIndex": 1, "endIndex": 14, "tabId": "manual-no-newline-tab"},
+        }},
         {
             "updateParagraphStyle": {
                 "range": {"startIndex": 1, "endIndex": 14, "tabId": "manual-no-newline-tab"},
@@ -1519,7 +1537,7 @@ def test_task7_standalone_high_complexity_plans_reject_before_utf16_work(
 
 @pytest.mark.parametrize(
     "profile, exact_count",
-    (("plain", 7), ("persian", 10)),
+    (("plain", 8), ("persian", 11)),
 )
 def test_task7_replacement_request_cap_counts_every_eventual_operation(
     profile: str, exact_count: int, monkeypatch: pytest.MonkeyPatch
@@ -2311,3 +2329,60 @@ def test_task9_semantic_sha_rejects_non_finite_json_without_echo(
         markdown_module.semantic_sha256({"value": non_finite})
 
     assert_semantic_verification_failed(caught.value)
+
+
+@pytest.mark.parametrize("profile", ["plain", "persian"])
+@pytest.mark.parametrize("source", ["متن 🧪\n\n- گزینه", "\n", "| A |\n| --- |\n| B |"])
+def test_native_list_cleanup_is_tab_scoped_before_final_styles(profile, source):
+    model = parse_markdown(source)
+    requests = markdown_module.replacement_requests(model, 30, "t.native", profile)
+    cleanups = [(index, request["deleteParagraphBullets"])
+                for index, request in enumerate(requests) if "deleteParagraphBullets" in request]
+    assert len(cleanups) == 1
+    index, cleanup = cleanups[0]
+    assert cleanup == {"range": {"startIndex": 1, "endIndex": 1 + utf16_length(model.text),
+                                 "tabId": "t.native"}}
+    assert index > next(i for i, r in enumerate(requests) if "deleteContentRange" in r)
+    assert all(i > index for i, r in enumerate(requests)
+               if "updateParagraphStyle" in r or "updateTextStyle" in r)
+    assert not any("createParagraphBullets" in r for r in requests)
+
+
+def test_native_list_cleanup_is_charged_before_request_construction(monkeypatch):
+    model = parse_markdown("body")
+    monkeypatch.setattr(markdown_module, "_MAX_REPLACEMENT_REQUESTS", 3)
+    with pytest.raises(DocsMCPError) as caught:
+        markdown_module.replacement_requests(model, 2, "t.native", "plain")
+    assert_invalid_markdown(caught.value, "body")
+
+
+@pytest.mark.parametrize("in_cell", [False, True])
+@pytest.mark.parametrize("content", ["body\n", "\n", "• literal bullet\n"])
+def test_native_list_metadata_changes_semantic_digest_including_empty_paragraphs(in_cell, content):
+    node = _task9_paragraph(_task9_text_run(content))
+    if in_cell:
+        body = {"content": [{"table": {"tableRows": [
+            {"tableCells": [{"content": [node]}]}
+        ]}}]}
+    else:
+        body = {"content": [node]}
+    baseline = markdown_module.remote_semantic(body)
+    node["paragraph"]["bullet"] = {"listId": "PRIVATE_LIST_CANARY", "nestingLevel": 0}
+    actual = markdown_module.remote_semantic(body)
+    assert markdown_module.semantic_sha256(actual) != markdown_module.semantic_sha256(baseline)
+    assert "PRIVATE_LIST_CANARY" not in repr(actual)
+
+
+@pytest.mark.parametrize("character", ["\x01", "\x08", "\x0c", "\x1f", "\ue000", "\uf8ff", "\ud800"])
+@pytest.mark.parametrize("in_cell", [False, True])
+def test_markdown_rejects_google_stripped_emitted_text(character, in_cell):
+    text = f"before{character}🧪 **bold** [link](https://example.com)"
+    source = f"| Header |\n| --- |\n| {text} |" if in_cell else text
+    with pytest.raises(DocsMCPError) as caught:
+        parse_markdown(source)
+    assert_invalid_markdown(caught.value, "before", "example.com")
+
+
+def test_emitted_text_guard_preserves_normalization_frontmatter_and_unicode():
+    source = "---\r\nignored: \ue000\r\n---\r\nفارسی\u200c🧪\tEnglish\r\n"
+    assert parse_markdown(source).text == "فارسی\u200c🧪\tEnglish\n"

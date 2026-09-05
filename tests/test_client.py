@@ -5703,3 +5703,20 @@ def test_task11_edit_operation_delegates_preview_and_apply(
     assert applied["ok"] is True
     assert applied["verified"] is True
     assert len(apply_client.batch_calls) == 1
+
+
+@pytest.mark.parametrize("operation", ["create", "replace"])
+@pytest.mark.parametrize("in_cell", [False, True])
+def test_google_stripped_markdown_is_rejected_before_any_remote_call(tmp_path, operation, in_cell):
+    text = "PRIVATE_CONTROL_CANARY\x01🧪 **bold**"
+    source = f"| Header |\n| --- |\n| {text} |" if in_cell else text
+    client = Task11Client()
+    service = _task11_service(client, tmp_path / "recovery")
+    with pytest.raises(DocsMCPError) as caught:
+        if operation == "create":
+            service.create("Synthetic", source, "plain")
+        else:
+            service.replace_markdown(VALID_ID, source, "rev-1", "t.selected", "plain")
+    assert caught.value.code == "invalid_markdown"
+    assert client.events == []
+    assert_error_sanitized(caught.value, "PRIVATE_CONTROL_CANARY")
