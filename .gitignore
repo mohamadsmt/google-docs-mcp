@@ -1,0 +1,65 @@
+# Python environments, caches, and build output
+.venv/
+.venv-*/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+__pycache__/
+*.py[cod]
+build/
+dist/
+*.egg-info/
+.coverage
+.coverage.*
+htmlcov/
+
+# Local agent state, internal planning, and acceptance artifacts
+.hermes/
+.artifacts/
+graphify-out/
+/docs/plans/
+/docs/superpowers/
+
+# Never commit real environment values, OAuth tokens, or private keys.
+# Example files must contain placeholders only; ignore rules are not a scanner.
+.env
+.env.*
+!.env.example
+*token*.json
+*token*.json.*
+*credentials*.json
+*credentials*.json.*
+*client_secret*.json
+*client_secret*.json.*
+service-account*.json
+service_account*.json
+auth.json
+secrets/
+credentials/
+*.pem
+*.key
+*.p12
+*.pfx
+
+# Private document exports, recovery copies, journals, and local databases
+google-docs-mcp-recovery/
+recovery-*/
+exports/
+backups/
+*.log
+*.db
+*.db-*
+*.sqlite
+*.sqlite-*
+*.sqlite3
+*.sqlite3-*
+*.bak
+
+# OS/editor state
+.DS_Store
+._*
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
