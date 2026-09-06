@@ -10,6 +10,26 @@ from typing import Any, cast
 import pytest
 
 import test_live_google as live
+import test_live_structured as structured
+
+
+@pytest.mark.parametrize("payload", [
+    {"ok": True, "applied": False, "valid": True, "scope": {}},
+    {"ok": True, "applied": False, "scope": {"rows": 2}},
+    {"ok": True, "applied": False, "no_op": True, "verified": True, "tab": {}},
+])
+def test_structured_preview_does_not_claim_applied_verification(payload):
+    structured._require_preview(payload)
+
+
+@pytest.mark.parametrize("payload", [
+    {"ok": False, "applied": False, "error": {"code": "google_unavailable"}},
+    {"ok": True, "applied": True, "verified": True, "scope": {}},
+    {"ok": True, "applied": False},
+])
+def test_structured_preview_fails_closed(payload):
+    with pytest.raises(live._CheckFailed):
+        structured._require_preview(payload)
 
 
 @pytest.mark.parametrize("fault", [None, "preview_mutates", "apply_corrupts", "apply_revision",

@@ -37,13 +37,16 @@ _DOCUMENT_ID_RE = re.compile(r"[A-Za-z0-9_-]{10,256}")
 _SAFE_DIAGNOSTICS = {
     "code": frozenset({"verification_failed", "partial_write_requires_recovery",
                        "google_needs_reauth", "google_unavailable", "permission_denied",
-                       "rate_limited", "recovery_unavailable", "stale_revision"}),
+                       "rate_limited", "recovery_unavailable", "stale_revision",
+                       "invalid_input", "invalid_markdown", "unsupported_table"}),
     "failure_code": frozenset({"verification_failed", "partial_write_requires_recovery",
                                "google_needs_reauth", "google_unavailable",
                                "permission_denied", "recovery_unavailable"}),
     "phase": frozenset({"initial_content", "table_structure", "table_structure_readback",
                         "table_cell_text", "table_cell_readback", "table_cell_styles",
-                        "semantic_verification", "format_verification", "recovery_cleanup"}),
+                        "semantic_verification", "format_verification", "recovery_cleanup",
+                        "initial_readback", "final_verification", "table_cell_text_readback",
+                        "table_cell_styles_readback", "table_verification"}),
 }
 _NATIVE_DOCUMENT_MIME = "application/vnd.google-apps.document"
 
@@ -90,6 +93,7 @@ _STAGES = frozenset({
     "apply", "sentinel edit", "sentinel read", "stale guard", "replace", "final read",
     "cleanup", "cleanup MCP read", "recovery", "semantic verification",
     "docs_insert_text", "insertion preview", "insertion apply", "insertion stale", "insertion anchor",
+    "docs_edit_section", "docs_edit_table", "docs_format", "docs_manage_tab",
 })
 _REASONS = frozenset({
     "acceptance check failed", "typed operation failed", "MCP transport failed",

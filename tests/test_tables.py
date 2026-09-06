@@ -331,8 +331,13 @@ def test_empty_set_retains_mandatory_paragraph(tmp_path):
 @pytest.mark.parametrize("action,side", [("insert_row", "before"), ("insert_row", "after"),
                                          ("insert_column", "before"), ("insert_column", "after")])
 @pytest.mark.parametrize("profile", ["persian", "plain"])
-def test_insert_dimension_styles_only_new_cells_from_actual_indices(tmp_path, action, side, profile):
+@pytest.mark.parametrize("reverse_column_order", [False, True])
+def test_insert_dimension_styles_only_new_cells_from_actual_indices(tmp_path, action, side, profile, reverse_column_order):
     position = 0 if side == "before" else 1
+    # Live RTL readback places insertRight before the reference in the logical
+    # cell array. Physical side is requested, not inferred from array order.
+    if action == "insert_column" and reverse_column_order:
+        position = 1 - position
     new = grid()
     row_ids, widths = [0, 1], [70, 90]
     if action == "insert_row":
@@ -378,6 +383,18 @@ def test_insert_dimension_styles_only_new_cells_from_actual_indices(tmp_path, ac
     else:
         assert len(client.batches) == 1
     assert list((tmp_path / "recovery").iterdir()) == []
+
+
+def test_ambiguous_column_identity_stops_before_cell_styling(tmp_path):
+    before = document([[cell(""), cell("")], [cell(""), cell("")]], widths=[70, 70])
+    after = document([[cell(""), cell(""), cell("")], [cell(""), cell(""), cell("")]],
+                     widths=[70, 70, 70], revision="r2")
+    client = Client(before, after)
+    with pytest.raises(DocsMCPError) as error:
+        invoke(client, tmp_path, action="insert_column", row_index=None, column_index=0,
+               markdown=None, side="after", format_profile="plain", apply=True)
+    assert_recovery(error, tmp_path)
+    assert len(client.batches) == 1
 
 
 @pytest.mark.parametrize("action,index", [("delete_row", 0), ("delete_row", 1), ("delete_column", 0), ("delete_column", 1)])

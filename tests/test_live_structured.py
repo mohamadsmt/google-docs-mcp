@@ -7,6 +7,7 @@ import asyncio
 from copy import deepcopy
 from datetime import timedelta
 import os
+import json
 from pathlib import Path
 
 import pytest
@@ -90,6 +91,14 @@ def _check(value, stage, reason="acceptance check failed"):
     live._require(bool(value), f"{stage}: {reason}")
 
 
+def _require_preview(payload):
+    if payload.get("ok") is not True:
+        live._require_ok(payload, "preview")
+    _check(payload.get("applied") is False and
+           (isinstance(payload.get("scope"), dict) or isinstance(payload.get("tab"), dict)),
+           "preview", "invalid preview")
+
+
 def _check_layout(body, *, direction, alignment, indent):
     paragraphs = list(live._paragraphs(body["content"]))
     _check(paragraphs, "Persian API verification")
@@ -123,10 +132,21 @@ async def _exercise(session, client, document_id, tmp_path):
         if name != "docs_manage_tab":
             arguments["tab_id"] = target
         preview = await live._call(session, name, {**arguments, "apply": False})
-        live._require_ok(preview, "preview")
+        _require_preview(preview)
         _check(client.get_document(document_id) == before, "preview", "preview mutated document")
         result = await live._call(session, name, {**arguments, "apply": True})
-        live._require_ok(result, "apply")
+        if result.get("ok") is not True:
+            # Diagnostic only, never acceptance evidence. The enclosing journal
+            # guarantees these are exclusively this test's synthetic bodies.
+            path = tmp_path / "failed-structured-bodies.json"
+            with path.open("x", encoding="utf-8") as stream:
+                path.chmod(0o600)
+                error = result.get("error", {})
+                json.dump({"tool": name, "action": args.get("action"),
+                           "code": error.get("code"), "phase": error.get("phase"),
+                           "before": _body(before, tab_id),
+                           "after": _body(client.get_document(document_id), tab_id)}, stream)
+        live._require_ok(result, name)
         _check(result.get("verified") is True, "apply", "format not verified")
         after = client.get_document(document_id)
         _check(result.get("after_revision_id", result.get("revision_id")) == after["revisionId"],
@@ -168,16 +188,24 @@ async def _exercise(session, client, document_id, tmp_path):
     runs = [run for paragraph in live._paragraphs(cell["content"]) for run in live._text_runs(paragraph)]
     _check(any("هفت" in r.get("content", "") and r.get("textStyle", {}).get("bold") is True for r in runs), "apply")
     _check(any(r.get("textStyle", {}).get("link", {}).get("url") == "https://example.com/cell" for r in runs), "apply")
+    inserted_column = None
     for action, selectors, dimensions in [
         ("insert_row", {"row_index": 1, "side": "before"}, (3, 2)),
         ("delete_row", {"row_index": 1}, (2, 2)),
         ("insert_column", {"column_index": 1, "side": "after"}, (2, 3)),
         ("delete_column", {"column_index": 2}, (2, 2)),
     ]:
+        if action == "delete_column":
+            selectors["column_index"] = inserted_column
         _, before, after = await mutate("docs_edit_table", action=action, table_index=0, **selectors)
         table = _tables(after, tab_id)[0]
         _check((table["rows"], table["columns"]) == dimensions, "apply")
         _check(_cells(_tables(before, tab_id)[1]) == _cells(_tables(after, tab_id)[1]), "apply")
+        if action == "insert_column":
+            rows = _cells(table)
+            empty = [c for c in range(table["columns"]) if all(row[c] == "\n" for row in rows)]
+            _check(len(empty) == 1, "apply")
+            inserted_column = empty[0]
     await mutate("docs_edit_table", action="set_cell", table_index=0, row_index=1, column_index=1, markdown="")
 
     _, before, after = await mutate("docs_format", format_profile="persian", right_indent_pt=12)

@@ -133,8 +133,11 @@ def test_apply_payload_is_only_scoped_style_fields_and_verifies_independent_read
                 "indentEnd": {"magnitude": 0 if profile == "persian" else indent, "unit": "PT"}}
         else:
             assert profile == "persian"
-            assert value["fields"] == "weightedFontFamily.fontFamily"
-            assert value["textStyle"] == {"weightedFontFamily": {"fontFamily": "Vazirmatn"}}
+            assert value["fields"] == "weightedFontFamily,bold"
+            original = next(e["textRun"] for n in paragraphs(before) for e in n["paragraph"]["elements"]
+                            if e["startIndex"] == value["range"]["startIndex"])
+            assert value["textStyle"] == {"weightedFontFamily": {"fontFamily": "Vazirmatn", "weight": 400},
+                                          "bold": original.get("textStyle", {}).get("bold", False)}
     assert before == sample()
 
 
@@ -154,7 +157,7 @@ def test_each_field_repaired_independently_and_compliant_fields_still_verified(f
     assert run(client, apply=True)["verified"] is True
     requests = client.writes[0][1]
     assert len(requests) == 1
-    assert next(iter(requests[0].values()))["fields"] == ("weightedFontFamily.fontFamily" if field == "fontFamily" else field)
+    assert next(iter(requests[0].values()))["fields"] == ("weightedFontFamily,bold" if field == "fontFamily" else field)
     other = "alignment" if field != "alignment" else "direction"
     paragraphs(after)[2]["paragraph"]["paragraphStyle"].pop(other)
     with pytest.raises(DocsMCPError) as error:
@@ -172,6 +175,51 @@ def test_compliant_whole_tab_is_verified_noop_even_for_final_blank_paragraph(pro
     assert not any(result["mismatches"].values())
     assert result["revision_id"] == "r1"
     assert client.writes == []
+
+
+@pytest.mark.parametrize("inherited_weight", [None, 400, 600])
+def test_font_repair_preserves_resolved_weight_and_accepts_materialized_default(inherited_weight):
+    before = sample()
+    paragraphs(before)[0]["paragraph"]["elements"][0]["textRun"]["textStyle"].pop("weightedFontFamily")
+    if inherited_weight is not None:
+        before["tabs"][0]["documentTab"]["namedStyles"] = {"styles": [{
+            "namedStyleType": "NORMAL_TEXT", "textStyle": {
+                "weightedFontFamily": {"fontFamily": "Arial", "weight": inherited_weight}}}]}
+    after = repaired(before)
+    for old, new in zip(paragraphs(before), paragraphs(after), strict=True):
+        for a, b in zip(old["paragraph"]["elements"], new["paragraph"]["elements"], strict=True):
+            if "textRun" in a and "weightedFontFamily" not in a["textRun"].get("textStyle", {}):
+                b["textRun"]["textStyle"]["weightedFontFamily"]["weight"] = inherited_weight or 400
+    client = Client(before, after)
+    assert run(client, apply=True)["verified"]
+    request = next(r["updateTextStyle"] for r in client.writes[0][1]
+                   if "updateTextStyle" in r and r["updateTextStyle"]["range"]["startIndex"] == 1)
+    assert request["textStyle"]["weightedFontFamily"] == {
+        "fontFamily": "Vazirmatn", "weight": inherited_weight or 400}
+    paragraphs(after)[0]["paragraph"]["elements"][0]["textRun"]["textStyle"]["weightedFontFamily"]["weight"] = 900
+    with pytest.raises(DocsMCPError):
+        run(Client(before, after), apply=True)
+
+
+@pytest.mark.parametrize("explicit,inherited", [(True, False), (False, True), (None, True), (None, False)])
+def test_font_change_explicitly_reapplies_resolved_bold(explicit, inherited):
+    before = sample()
+    style = paragraphs(before)[0]["paragraph"]["elements"][0]["textRun"]["textStyle"]
+    if explicit is None:
+        style.pop("bold")
+    else:
+        style["bold"] = explicit
+    before["tabs"][0]["documentTab"]["namedStyles"] = {"styles": [{
+        "namedStyleType": "NORMAL_TEXT", "textStyle": {"bold": inherited}}]}
+    after = repaired(before)
+    expected = inherited if explicit is None else explicit
+    paragraphs(after)[0]["paragraph"]["elements"][0]["textRun"]["textStyle"]["bold"] = expected
+    client = Client(before, after)
+    assert run(client, apply=True)["verified"]
+    request = next(r["updateTextStyle"] for r in client.writes[0][1]
+                   if "updateTextStyle" in r and r["updateTextStyle"]["range"]["startIndex"] == 1)
+    assert request["fields"] == "weightedFontFamily,bold"
+    assert request["textStyle"]["bold"] is expected
 
 
 @pytest.mark.parametrize("kwargs", [

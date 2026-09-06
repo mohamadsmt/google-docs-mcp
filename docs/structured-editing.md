@@ -76,6 +76,8 @@ Extraneous selectors/content are rejected, not ignored. Merged and nested target
 
 New empty cells receive the requested profile. `plain` does not impose Persian layout. Structural changes may need separate structure/style batches and recovery exports; they are not advertised as a whole-operation transaction.
 
+Column before/after is a physical side; the logical cell-array order can differ in RTL tables. Apply reports `scope.inserted_column_index` from verified readback, not arithmetic on the reference index. If indistinguishable adjacent empty columns prevent unique identification, the operation stops before cell styling and retains recovery exports; it never guesses which existing cell to reformat.
+
 ## Verification and real acceptance
 
 Offline tests cover strict inputs, preview/nonmutation, stale revisions, Unicode indices, exact payloads, preserved scopes, corrupted readback and partial-write recovery. Run the complete explicit sdist test manifest rather than ignored local sync-conflict test copies.

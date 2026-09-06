@@ -237,6 +237,23 @@ def _verify_structure(before_body: dict, after_body: dict, table_index: int,
     return after_node, changed
 
 
+def _inserted_column_position(before: dict, after: dict, table_index: int,
+                              column_index: int) -> int:
+    # insertRight is physical; Docs cell arrays can use the opposite logical
+    # ordering. Only accept a unique adjacent empty column whose removal restores
+    # every original cell/style/width and all outside content exactly.
+    matches = []
+    for position in (column_index, column_index + 1):
+        try:
+            _verify_structure(before, after, table_index, "insert_column", None, column_index, position)
+        except DocsMCPError:
+            continue
+        matches.append(position)
+    if len(matches) != 1:
+        raise verification_failed()
+    return matches[0]
+
+
 def _readback(client: Any, context: EditContext, revision: str) -> dict:
     raw, selected = checked_readback(client, context, revision)
     # Common checks tabs; root document/named styles are also outside our scope.
@@ -366,6 +383,10 @@ def edit_table(client: Any, recovery_root: Path, document: str, expected_revisio
             body = _readback(client, context, revision)
         else:
             body = context.selected.body
+        if action == "insert_column":
+            assert column_index is not None  # Required by the argument validator.
+            position = _inserted_column_position(context.selected.body, body, table_index, column_index)
+            scope["inserted_column_index"] = position
         current, changed = _verify_structure(context.selected.body, body, table_index,
                                              action, row_index, column_index, position)
         if inline is not None:

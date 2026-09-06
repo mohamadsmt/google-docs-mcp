@@ -102,7 +102,41 @@ def _matches(actual: Any, expected: Any) -> bool:
     return actual == expected
 
 
-def _plan(nodes: list[dict], tab_id: str, styles: dict, persian: bool) -> tuple[dict, list[dict]]:
+def _named_styles(document: dict, tab_id: str) -> dict:
+    pending = list(document["tabs"])
+    while pending:
+        tab = pending.pop()
+        pending.extend(tab.get("childTabs", []))
+        if tab["tabProperties"]["tabId"] == tab_id:
+            styles = tab["documentTab"].get("namedStyles", document.get("namedStyles", {}))
+            return {s["namedStyleType"]: s.get("textStyle", {})
+                    for s in styles.get("styles", [])}
+    raise verification_failed()
+
+
+def _resolved_font(paragraph: dict, run: dict, fonts: dict) -> dict:
+    font = run.get("textStyle", {}).get("weightedFontFamily")
+    if font is None:
+        name = paragraph.get("paragraphStyle", {}).get("namedStyleType", "NORMAL_TEXT")
+        font = (fonts.get(name, {}).get("weightedFontFamily")
+                or fonts.get("NORMAL_TEXT", {}).get("weightedFontFamily", {}))
+    weight = font.get("weight", 400)
+    if type(weight) is not int or weight not in range(100, 901, 100):
+        raise _google_unavailable()
+    return {**font, "weight": weight}
+
+
+def _resolved_bold(paragraph: dict, run: dict, styles: dict) -> bool:
+    name = paragraph.get("paragraphStyle", {}).get("namedStyleType", "NORMAL_TEXT")
+    inherited = styles.get(name, {}).get("bold", styles.get("NORMAL_TEXT", {}).get("bold", False))
+    value = run.get("textStyle", {}).get("bold", inherited)
+    if type(value) is not bool:
+        raise _google_unavailable()
+    return value
+
+
+def _plan(nodes: list[dict], tab_id: str, styles: dict, persian: bool,
+          fonts: dict) -> tuple[dict, list[dict]]:
     counts = {name: 0 for name in (*_PARAGRAPH_FIELDS, "fontFamily")}
     requests = []
     for node in nodes:
@@ -121,17 +155,21 @@ def _plan(nodes: list[dict], tab_id: str, styles: dict, persian: bool) -> tuple[
             run = element.get("textRun")
             if run is None:
                 continue
-            if run.get("textStyle", {}).get("weightedFontFamily", {}).get("fontFamily") != "Vazirmatn":
+            font = _resolved_font(paragraph, run, fonts)
+            if font.get("fontFamily") != "Vazirmatn":
                 counts["fontFamily"] += 1
                 requests.append({"updateTextStyle": {
                     "range": {"tabId": tab_id, "startIndex": element["startIndex"], "endIndex": element["endIndex"]},
-                    "textStyle": {"weightedFontFamily": {"fontFamily": "Vazirmatn"}},
-                    # Preserve explicit weight, bold, links, and all other styles.
-                    "fields": "weightedFontFamily.fontFamily"}})
+                    "textStyle": {"weightedFontFamily": {"fontFamily": "Vazirmatn", "weight": font["weight"]},
+                                  "bold": _resolved_bold(paragraph, run, fonts)},
+                    # Google materializes a default weight on font changes.
+                    # Preserve the resolved (including inherited) weight explicitly.
+                    "fields": "weightedFontFamily,bold"}})
     return counts, requests
 
 
 def _snapshot(document: dict, tab_id: str, start: int, end: int, persian: bool) -> dict:
+    fonts = _named_styles(document, tab_id)
     copy = deepcopy(document)
     copy.pop("revisionId", None)
     pending = list(copy["tabs"])
@@ -152,9 +190,23 @@ def _snapshot(document: dict, tab_id: str, start: int, end: int, persian: bool) 
                     if "textRun" not in element:
                         continue
                     run = element["textRun"]
-                    text_style = run.get("textStyle", {})
+                    weight = _resolved_font(paragraph, run, fonts)["weight"]
+                    bold = _resolved_bold(paragraph, run, fonts)
+                    text_style = run.setdefault("textStyle", {})
+                    if bold:
+                        text_style["bold"] = True
+                    else:
+                        text_style.pop("bold", None)
                     family = text_style.get("weightedFontFamily", {})
                     family.pop("fontFamily", None)
+                    # Missing normal weight and Google's explicit 400 are the
+                    # same semantic value, but nondefault inherited weights are not.
+                    if weight == 400:
+                        family.pop("weight", None)
+                    else:
+                        family["weight"] = weight
+                        text_style["weightedFontFamily"] = family
+                        run["textStyle"] = text_style
                     if not family:
                         text_style.pop("weightedFontFamily", None)
                     if not text_style:
@@ -192,7 +244,8 @@ def format_document(client: Any, document: str, expected_revision_id: str,
         "indentStart": {"magnitude": right_indent_pt if persian else 0, "unit": "PT"},
         "indentEnd": {"magnitude": 0 if persian else right_indent_pt, "unit": "PT"},
     }
-    counts, requests = _plan(nodes, context.selected.tab_id, styles, persian)
+    fonts = _named_styles(context.before, context.selected.tab_id)
+    counts, requests = _plan(nodes, context.selected.tab_id, styles, persian, fonts)
     _enforce_request_plan(requests)
     result = {
         "ok": True, "document_id": context.document_id, "document_url": context.document_url,
@@ -210,7 +263,7 @@ def format_document(client: Any, document: str, expected_revision_id: str,
     after, selected = checked_readback(client, context, revision)
     try:
         after_nodes = _selected_paragraphs(selected.body, start, end)
-        remaining, _ = _plan(after_nodes, selected.tab_id, styles, persian)
+        remaining, _ = _plan(after_nodes, selected.tab_id, styles, persian, _named_styles(after, selected.tab_id))
         if (any(remaining.values())
                 or _snapshot(after, selected.tab_id, start, end, persian) != expected_snapshot):
             raise verification_failed()
