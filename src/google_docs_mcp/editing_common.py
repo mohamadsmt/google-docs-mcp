@@ -126,7 +126,8 @@ def paragraph_text(element: dict) -> str | None:
     return "".join(pieces).removesuffix("\n")
 
 
-def heading_range(body: dict, heading_text: str, include_heading: bool = False) -> tuple[int, int]:
+def heading_range(body: dict, heading_text: str, include_heading: bool = False,
+                  *, include_terminal_newline: bool = False) -> tuple[int, int]:
     if not isinstance(heading_text, str) or not heading_text or len(heading_text) > 500_000:
         raise invalid()
     headings = []
@@ -139,7 +140,9 @@ def heading_range(body: dict, heading_text: str, include_heading: bool = False) 
     if len(matches) != 1:
         raise DocsMCPError("heading_match_mismatch", "The heading must match exactly once in the selected body.")
     offset, heading, level = matches[0]
-    end = _service_end_index(body) - 1
+    # Formatting may include the terminal newline, but an actual following
+    # heading always wins, even when it is the final empty paragraph.
+    end = _service_end_index(body) - (0 if include_terminal_newline else 1)
     for element, other_level in headings[offset + 1:]:
         if other_level <= level:
             end = element["startIndex"]

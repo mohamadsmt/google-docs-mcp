@@ -8,7 +8,7 @@ The four new tools are `docs_edit_section`, `docs_format`, `docs_manage_tab`, an
 
 No pre-existing user document was selected for a write. Live tests use only private run-owned synthetic documents; exact-ID deletion and independent deletion readback are mandatory cleanup, including on failure. No push was performed. Enabling the tools does not migrate or reformat any existing document.
 
-## Executed evidence before candidate freeze
+## Alignment candidate evidence (before the boundary revision below)
 
 - RED: new regression tests rejected the old Persian API/profile behavior and old bidi-unaware DOCX justification oracle: 6 failed, 4 passed, 1 opt-in skipped.
 - Fresh canonical Python 3.12 non-editable `.venv`, locked dependencies, clean Python environment without ambient `PYTHONPATH`/`PYTHONHOME`.
@@ -32,7 +32,7 @@ Native Google PDF rendered locally, inspected directly:
 
 The seven-page structured PDF includes Google's generated tab divider pages; those are not body paragraphs rewritten by the formatting operation. Visual verification is distinct from API/DOCX checks; the old passing automated suite was not proof of correct appearance.
 
-## Frozen local provenance
+## Alignment candidate provenance (historical after boundary revision)
 
 - Source-module manifest SHA-256 (sorted path→file-SHA JSON): `707c7557d41d51058671ed6b503cae87aa09d3ed9a6edef073208071923e92d2`.
 - Complete live JUnit: run directory `gdocs-alignment-live-15jnetsl`; SHA-256 `31328a3a0420c7cebf9314dff5c3f0482f559a07c0d2ca74d786a08b7df9f089`.
@@ -43,4 +43,12 @@ The seven-page structured PDF includes Google's generated tab divider pages; tho
 
 Failed diagnostic runs were not resumed or substituted for this evidence. A run with pytest basetemp accidentally inside the checkout failed the intentional outside-checkout launcher assertion; the successful acceptance above uses a fresh OS-temporary directory outside the checkout.
 
-Independent specification and quality/security verdicts are separate release gates bound to the candidate commit containing this report. A final post-commit reinstall/retest and default-profile allowlist readback/discovery are recorded separately by the releasing agent; this pre-freeze report does not claim those later steps happened already. Existing Hermes chats require `/reload-mcp` or a fresh chat to acquire changed registration.
+## Specification review: terminal heading boundary correction
+
+Specification review of `7da802c2225d724a3bbdfef87c2976d2c8e2cb49` found a genuine scope defect: formatting extended a section through a following equal/higher-level empty heading when that heading was the final paragraph. Its start index happened to equal the normal terminal-newline sentinel. The parent independently reproduced it: 4 regression cases failed and 4 control cases passed on that candidate.
+
+The correction lets the common heading resolver include the terminal newline for formatting while retaining the earlier cutoff at every actual following heading. Destructive section edits retain the old newline-excluding default. Eight new cases cover Persian/English, equal/higher/lower headings and a normal final blank paragraph, preview nonmutation, exact apply ranges and detection of damaged out-of-scope readback. Focused formatting/common/section regressions: **151 passed**, in a fresh outside-checkout temporary directory.
+
+Revised source-module manifest SHA-256: `c4d60e32cffa6ed79b91b996b0a1ee3e318ea8b4a349176fa381f393a069bcf2`. The prior candidate also passed a post-commit fresh physical installation and all 1075 tests, but those results do not certify this boundary revision. The complete manifest must be rerun on a fresh non-editable installation after the revised commit; output directories from earlier candidates are not canonical acceptance evidence for the new candidate.
+
+Independent specification and quality/security verdicts are separate release gates bound to the revised candidate commit containing this report. Post-commit reinstall/retest and default-profile allowlist readback/discovery are recorded separately by the releasing agent; this pre-freeze report does not claim those later steps happened already. Existing Hermes chats require `/reload-mcp` or a fresh chat to acquire changed registration.

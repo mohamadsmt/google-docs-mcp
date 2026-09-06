@@ -231,10 +231,8 @@ def format_document(client: Any, document: str, expected_revision_id: str,
     terminal = _service_end_index(body)
     start, end = 1, terminal
     if heading_text is not None:
-        start, end = heading_range(body, heading_text, include_heading=True)
-        if end == terminal - 1:
-            # Style updates, unlike deletions, may include the mandatory newline.
-            end = terminal
+        start, end = heading_range(body, heading_text, include_heading=True,
+                                   include_terminal_newline=True)
     nodes = _selected_paragraphs(body, start, end)
     persian = format_profile == "persian"
     styles = {

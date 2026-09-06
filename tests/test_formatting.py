@@ -177,6 +177,43 @@ def test_compliant_whole_tab_is_verified_noop_even_for_final_blank_paragraph(pro
     assert client.writes == []
 
 
+@pytest.mark.parametrize("profile", ["persian", "english"])
+@pytest.mark.parametrize("following_style,end", [
+    ("HEADING_1", 46), ("HEADING_2", 46), ("HEADING_3", 47), (None, 47),
+])
+def test_section_formatting_respects_empty_terminal_heading_boundary(profile, following_style, end):
+    before = sample()
+    after = repaired(before, profile=profile, section=True)
+    for document in (before, after):
+        content = document["tabs"][0]["documentTab"]["body"]["content"]
+        content[2]["paragraph"]["paragraphStyle"]["namedStyleType"] = "HEADING_2"
+        content[5]["paragraph"]["paragraphStyle"]["namedStyleType"] = "HEADING_3"
+        content[7:] = [paragraph("\n", 46, following_style)]
+    if end == 47:
+        final = after["tabs"][0]["documentTab"]["body"]["content"][-1]["paragraph"]
+        final["paragraphStyle"].update({
+            "direction": "RIGHT_TO_LEFT" if profile == "persian" else "LEFT_TO_RIGHT",
+            "alignment": "START", "indentStart": {"magnitude": 0, "unit": "PT"},
+            "indentEnd": {"magnitude": 0, "unit": "PT"}})
+        if profile == "persian":
+            final["elements"][0]["textRun"]["textStyle"]["weightedFontFamily"]["fontFamily"] = "Vazirmatn"
+    client = Client(before, after)
+    preview = run(client, heading_text="Target", format_profile=profile)
+    assert preview["scope"]["end_index"] == end
+    assert not client.writes
+    result = run(client, heading_text="Target", format_profile=profile, apply=True)
+    assert result["verified"] is True
+    assert result["scope"]["end_index"] == end
+    assert all(next(iter(request.values()))["range"]["endIndex"] <= end
+               for request in client.writes[0][1])
+    if end == 46:
+        damaged = deepcopy(after)
+        damaged["tabs"][0]["documentTab"]["body"]["content"][-1]["paragraph"]["paragraphStyle"]["alignment"] = "CENTER"
+        with pytest.raises(DocsMCPError) as error:
+            run(Client(before, damaged), heading_text="Target", format_profile=profile, apply=True)
+        assert error.value.code == "verification_failed"
+
+
 @pytest.mark.parametrize("inherited_weight", [None, 400, 600])
 def test_font_repair_preserves_resolved_weight_and_accepts_materialized_default(inherited_weight):
     before = sample()
