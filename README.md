@@ -261,14 +261,16 @@ A non-table replacement uses one atomic mutation batch. Tables require several g
 ```json
 {
   "direction": "RIGHT_TO_LEFT",
-  "alignment": "END",
+  "alignment": "START",
   "indentStart": {"magnitude": 0, "unit": "PT"},
   "indentEnd": {"magnitude": 0, "unit": "PT"},
   "weightedFontFamily": {"fontFamily": "Vazirmatn"}
 }
 ```
 
-RTL alone is not proof of right alignment, zero indentation, or the font. `END` is intentional: the DOCX check expects physical right alignment. In Google API readback, an omitted zero `magnitude` can mean protobuf zero; the indent object and `unit="PT"` still matter.
+RTL alone is not proof of right alignment, zero indentation, or the font. Google Docs alignment is logical: `START` means physical Right for RTL and physical Left for LTR; `END` does the opposite. The previous END contract was incorrect and is superseded. This correction affects future requested operations only; existing documents are not migrated automatically. In Google API readback, an omitted zero `magnitude` can mean protobuf zero; the indent object and `unit="PT"` still matter.
+
+DOCX verification resolves inherited `w:bidi` and `w:jc` together: Google exports native RTL/START as bidi/left, not bidi/right. OOXML paragraph justification is interpreted in the paragraph's bidi context ([reference](https://learn.microsoft.com/en-us/dotnet/api/documentformat.openxml.wordprocessing.bidi)). The opt-in `tests/test_alignment.py` captures actual START/END PDF and DOCX exports for independent comparison. API/XML agreement alone does not replace native PDF visual acceptance.
 
 The formatting contract is:
 

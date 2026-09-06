@@ -2847,7 +2847,7 @@ _TASK9_DOCX_CANARIES = (
 
 
 def _task9_docx_ppr(
-    *, bidi: bool = True, alignment: str = "right", indent: bool = True
+    *, bidi: bool = True, alignment: str = "left", indent: bool = True
 ) -> str:
     values = []
     if bidi:
@@ -2873,7 +2873,7 @@ def _task9_docx_rpr(*, font: bool = True, bold: bool = False) -> str:
 def _task9_docx_bytes(
     *,
     body_bidi: bool = True,
-    body_alignment: str = "right",
+    body_alignment: str = "left",
     body_indent: bool = True,
     body_font: bool = True,
     heading_bold: bool = True,
@@ -2975,13 +2975,13 @@ def test_task9_docx_effective_direct_and_inherited_formatting_passes() -> None:
     ("overrides", "reason", "count_field", "expected_count"),
     (
         (
-            {"body_bidi": False},
+            {"body_bidi": False, "body_alignment": "right"},
             "paragraph_bidi_missing",
             "bidi_paragraphs",
             2,
         ),
         (
-            {"body_alignment": "left"},
+            {"body_alignment": "right"},
             "paragraph_right_alignment_missing",
             "right_aligned_paragraphs",
             2,
@@ -4603,7 +4603,7 @@ def _task11_with_persian_api_styles(document: dict) -> dict:
                 paragraph = value["paragraph"]
                 paragraph.setdefault("paragraphStyle", {}).update({
                     "direction": "RIGHT_TO_LEFT",
-                    "alignment": "END",
+                    "alignment": "START",
                     "indentStart": {"magnitude": 0, "unit": "PT"},
                     "indentEnd": {"magnitude": 0, "unit": "PT"},
                 })

@@ -239,7 +239,7 @@ def format_document(client: Any, document: str, expected_revision_id: str,
     persian = format_profile == "persian"
     styles = {
         "direction": "RIGHT_TO_LEFT" if persian else "LEFT_TO_RIGHT",
-        "alignment": "END" if persian else "START",
+        "alignment": "START",
         # API indents are logical; the public parameter is physical right.
         "indentStart": {"magnitude": right_indent_pt if persian else 0, "unit": "PT"},
         "indentEnd": {"magnitude": 0 if persian else right_indent_pt, "unit": "PT"},

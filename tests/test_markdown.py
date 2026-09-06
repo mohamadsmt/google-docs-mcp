@@ -574,7 +574,7 @@ def test_task7_paragraph_profile_has_four_independent_properties() -> None:
             },
             "paragraphStyle": {
                 "direction": "RIGHT_TO_LEFT",
-                "alignment": "END",
+                "alignment": "START",
                 "indentStart": {"magnitude": 0, "unit": "PT"},
                 "indentEnd": {"magnitude": 0, "unit": "PT"},
             },
@@ -668,7 +668,7 @@ def test_task7_persian_replacement_is_one_exact_ordered_request_plan() -> None:
                 "range": {"startIndex": 1, "endIndex": 16, "tabId": "t.1"},
                 "paragraphStyle": {
                     "direction": "RIGHT_TO_LEFT",
-                    "alignment": "END",
+                    "alignment": "START",
                     "indentStart": {"magnitude": 0, "unit": "PT"},
                     "indentEnd": {"magnitude": 0, "unit": "PT"},
                 },
@@ -1214,7 +1214,7 @@ def test_task7_astral_heading_styles_are_bounded_by_replaced_body() -> None:
                 "range": global_range,
                 "paragraphStyle": {
                     "direction": "RIGHT_TO_LEFT",
-                    "alignment": "END",
+                    "alignment": "START",
                     "indentStart": {"magnitude": 0, "unit": "PT"},
                     "indentEnd": {"magnitude": 0, "unit": "PT"},
                 },
@@ -1900,7 +1900,7 @@ def test_task14_font_reset_cannot_erase_final_inline_or_heading_bold() -> None:
     for index in range(1, len(styles)):
         assert styles[index]["weightedFontFamily"] == {"fontFamily": "Vazirmatn"}
         assert styles[index]["direction"] == "RIGHT_TO_LEFT"
-        assert styles[index]["alignment"] == "END"
+        assert styles[index]["alignment"] == "START"
 
 
 @pytest.mark.parametrize("profile", ["persian", "plain"])
@@ -1917,7 +1917,7 @@ def test_task14_cell_profile_covers_empty_padded_and_utf16_text_before_emphasis(
         expected_range = {"startIndex": start, "endIndex": start + length, "tabId": "t.cells"}
         paragraph = next(r["updateParagraphStyle"] for r in requests if r.get("updateParagraphStyle", {}).get("range") == expected_range)
         assert paragraph["paragraphStyle"] == {
-            "direction": "RIGHT_TO_LEFT", "alignment": "END",
+            "direction": "RIGHT_TO_LEFT", "alignment": "START",
             "indentStart": {"magnitude": 0, "unit": "PT"},
             "indentEnd": {"magnitude": 0, "unit": "PT"},
         }

@@ -12,7 +12,7 @@ DOC = "synthetic_sections_123"
 TAB = "t1"
 URL = "https://example.com/x"
 TRANSPORT_CANARY = "SECTIONS_TRANSPORT_SECRET_CANARY_7ec910fa"
-PERSIAN = {"direction": "RIGHT_TO_LEFT", "alignment": "END",
+PERSIAN = {"direction": "RIGHT_TO_LEFT", "alignment": "START",
            "indentStart": {"magnitude": 0, "unit": "PT"},
            "indentEnd": {"magnitude": 0, "unit": "PT"}}
 FONT = {"weightedFontFamily": {"fontFamily": "Vazirmatn"}}

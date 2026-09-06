@@ -295,7 +295,7 @@ def _verify_cell(cell: dict, inline: md.InlineContent, profile: str, *, reset: b
             raise verification_failed()
     if profile == "persian":
         style = paragraph.get("paragraphStyle", {})
-        if style.get("direction") != "RIGHT_TO_LEFT" or style.get("alignment") != "END":
+        if style.get("direction") != "RIGHT_TO_LEFT" or style.get("alignment") != "START":
             raise verification_failed()
         for field in ("indentStart", "indentEnd"):
             dimension = style.get(field, {})

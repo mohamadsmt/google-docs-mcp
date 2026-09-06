@@ -42,7 +42,7 @@ Arguments: `document`, `expected_revision_id`, `tab_id=null`, `heading_text=null
 
 Omit heading_text to select the whole tab body; otherwise select that heading and its section. Table-cell paragraphs in scope are included. No text replacement is performed; links, bold, native heading/list/object structure are retained.
 
-- `persian`: RTL, explicit `END` alignment (physical Right under this project's tested contract), explicit zero left indent, requested physical right indent and Vazirmatn font.
+- `persian`: RTL, explicit `START` alignment (physical Right), explicit zero left indent, requested physical right indent and Vazirmatn font. This supersedes the incorrect old END alignment contract for all Persian profiles; no existing document is automatically reformatted.
 - `english`: explicit LTR/`START` (Left), explicit zero left indent and requested physical right indent; existing fonts are retained.
 - right_indent_pt must be a finite JSON number from 0 through 144 points. Booleans and numeric strings are not accepted.
 - An already compliant selection is a verified no-op; no write is sent.

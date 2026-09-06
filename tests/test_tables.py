@@ -11,7 +11,7 @@ from google_docs_mcp.client import DocsMCPError
 DOC = "synthetic_table_doc_123"
 LINK = "https://example.com/سلام"
 PERSIAN = {
-    "direction": "RIGHT_TO_LEFT", "alignment": "END",
+    "direction": "RIGHT_TO_LEFT", "alignment": "START",
     "indentStart": {"magnitude": 0, "unit": "PT"},
     "indentEnd": {"magnitude": 0, "unit": "PT"},
 }
@@ -430,7 +430,7 @@ def test_set_final_corruption_retains_recovery(tmp_path, corruption):
     if corruption == "target_text": p["elements"][0]["textRun"]["content"] = "خر🧪"
     if corruption == "bold": p["elements"][0]["textRun"]["textStyle"]["bold"] = False
     if corruption == "link": p["elements"][2]["textRun"]["textStyle"]["link"] = {"url": "https://wrong.test"}
-    if corruption == "paragraph_style": p["paragraphStyle"]["alignment"] = "START"
+    if corruption == "paragraph_style": p["paragraphStyle"]["alignment"] = "END"
     if corruption == "font": p["elements"][0]["textRun"]["textStyle"]["weightedFontFamily"] = {"fontFamily": "Arial"}
     body = after["tabs"][0]["documentTab"]["body"]
     if corruption == "outside_text": body["content"][3]["paragraph"]["elements"][0]["textRun"]["content"] = "Damage\n"

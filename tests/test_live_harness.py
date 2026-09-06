@@ -98,7 +98,7 @@ def test_api_formatting_accepts_proto_json_zero_omission(require_heading_bold, b
     for index in range(8):
         paragraphs.append({"paragraph": {
             "paragraphStyle": {
-                "direction": "RIGHT_TO_LEFT", "alignment": "END",
+                "direction": "RIGHT_TO_LEFT", "alignment": "START",
                 "indentStart": {"unit": "PT"}, "indentEnd": {"unit": "PT"},
                 "namedStyleType": "HEADING_1" if index == 0 else "NORMAL_TEXT",
             },
@@ -510,7 +510,7 @@ def test_acceptance_uses_content_and_independent_readbacks(monkeypatch, tmp_path
 
 @pytest.mark.parametrize("missing", [None, "paragraphStyle", "font"])
 def test_api_formatting_checks_empty_table_cells(missing) -> None:
-    style = {"direction": "RIGHT_TO_LEFT", "alignment": "END", "indentStart": {"unit": "PT"},
+    style = {"direction": "RIGHT_TO_LEFT", "alignment": "START", "indentStart": {"unit": "PT"},
              "indentEnd": {"unit": "PT"}, "namedStyleType": "HEADING_1"}
     text_style = {"weightedFontFamily": {"fontFamily": "Vazirmatn"}, "bold": True}
     body = [{"paragraph": {"paragraphStyle": style, "elements": [{"textRun": {

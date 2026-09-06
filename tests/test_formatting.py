@@ -60,7 +60,7 @@ def repaired(before, profile="persian", indent=0, section=False):
             continue
         node["paragraph"]["paragraphStyle"].update({
             "direction": "RIGHT_TO_LEFT" if profile == "persian" else "LEFT_TO_RIGHT",
-            "alignment": "END" if profile == "persian" else "START",
+            "alignment": "START",
             "indentStart": {"magnitude": indent if profile == "persian" else 0, "unit": "PT"},
             "indentEnd": {"magnitude": 0 if profile == "persian" else indent, "unit": "PT"}})
         if profile == "persian":
@@ -128,7 +128,7 @@ def test_apply_payload_is_only_scoped_style_fields_and_verifies_independent_read
             assert value["fields"] == "direction,alignment,indentStart,indentEnd"
             assert value["paragraphStyle"] == {
                 "direction": "RIGHT_TO_LEFT" if profile == "persian" else "LEFT_TO_RIGHT",
-                "alignment": "END" if profile == "persian" else "START",
+                "alignment": "START",
                 "indentStart": {"magnitude": indent if profile == "persian" else 0, "unit": "PT"},
                 "indentEnd": {"magnitude": 0 if profile == "persian" else indent, "unit": "PT"}}
         else:

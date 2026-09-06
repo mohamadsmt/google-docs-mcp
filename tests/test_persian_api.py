@@ -113,7 +113,7 @@ def _formatted_document():
     paragraph["paragraphStyle"] = {
         "namedStyleType": "NORMAL_TEXT",
         "direction": "RIGHT_TO_LEFT",
-        "alignment": "END",
+        "alignment": "START",
         "indentStart": {"unit": "PT"},
         "indentEnd": {"magnitude": 0, "unit": "PT"},
     }

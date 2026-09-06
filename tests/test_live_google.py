@@ -436,7 +436,7 @@ def _assert_api_persian_formatting(
             "Persian API verification: RTL missing",
         )
         _require(
-            paragraph_style.get("alignment") == "END",
+            paragraph_style.get("alignment") == "START",
             "Persian API verification: visual Right alignment missing",
         )
         for indent_name in ("indentStart", "indentEnd"):

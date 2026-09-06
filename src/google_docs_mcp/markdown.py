@@ -1457,7 +1457,7 @@ def paragraph_style_request(end_index: int, tab_id: str) -> dict | None:
             },
             "paragraphStyle": {
                 "direction": "RIGHT_TO_LEFT",
-                "alignment": "END",
+                "alignment": "START",
                 "indentStart": {"magnitude": 0, "unit": "PT"},
                 "indentEnd": {"magnitude": 0, "unit": "PT"},
             },

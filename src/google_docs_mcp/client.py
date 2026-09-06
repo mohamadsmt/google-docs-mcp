@@ -1414,12 +1414,16 @@ def _verify_persian_docx(data: bytes) -> dict[str, int | bool | list[str]]:
             *(style.paragraph_properties for style in paragraph_chain),
             paragraph_default,
         ]
-        if _docx_boolean_property(paragraph_sources, "bidi"):
+        bidi = _docx_boolean_property(paragraph_sources, "bidi")
+        if bidi:
             bidi_paragraphs += 1
         alignment = _docx_first_property_attribute(
             paragraph_sources, "jc", "val"
         )
-        if alignment is not None and alignment.casefold() == "right":
+        # OOXML bidi reverses paragraph justification, including inherited jc.
+        # Google exports native RTL+START as bidi+left, not bidi+right.
+        right_values = {"left", "start"} if bidi else {"right", "end"}
+        if alignment is not None and alignment.casefold() in right_values:
             right_aligned_paragraphs += 1
         right_indent = _docx_first_property_attribute(
             paragraph_sources, "ind", "right"
@@ -2826,7 +2830,7 @@ def _verify_persian_api(
                     if not elements:
                         continue
                 style = paragraph["paragraphStyle"]
-                if style.get("direction") != "RIGHT_TO_LEFT" or style.get("alignment") != "END":
+                if style.get("direction") != "RIGHT_TO_LEFT" or style.get("alignment") != "START":
                     raise ValueError
                 for name in ("indentStart", "indentEnd"):
                     indent = style[name]

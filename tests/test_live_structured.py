@@ -210,7 +210,7 @@ async def _exercise(session, client, document_id, tmp_path):
 
     _, before, after = await mutate("docs_format", format_profile="persian", right_indent_pt=12)
     _check(_text(_body(before, tab_id)) == _text(_body(after, tab_id)), "apply", "text readback mismatch")
-    _check_layout(_body(after, tab_id), direction="RIGHT_TO_LEFT", alignment="END", indent=12)
+    _check_layout(_body(after, tab_id), direction="RIGHT_TO_LEFT", alignment="START", indent=12)
     _, before, after = await mutate("docs_format", format_profile="persian", right_indent_pt=12)
     _check(before["revisionId"] == after["revisionId"], "apply", "preview mutated document")
     await mutate("docs_format", heading_text="پایان", format_profile="english", right_indent_pt=0)

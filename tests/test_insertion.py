@@ -12,7 +12,7 @@ from google_docs_mcp.client import DocsMCPError, GoogleDocsService
 
 DOC = "synthetic_doc_123"
 STYLE = {
-    "direction": "RIGHT_TO_LEFT", "alignment": "END",
+    "direction": "RIGHT_TO_LEFT", "alignment": "START",
     "indentStart": {"magnitude": 0, "unit": "PT"},
     "indentEnd": {"magnitude": 0, "unit": "PT"},
 }
