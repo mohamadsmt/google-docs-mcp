@@ -15,6 +15,10 @@ EXPECTED_TOOLS = [
     "docs_replace_markdown",
     "docs_edit_text",
     "docs_insert_text",
+    "docs_edit_section",
+    "docs_format",
+    "docs_manage_tab",
+    "docs_edit_table",
 ]
 
 

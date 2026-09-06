@@ -8,7 +8,7 @@ A small local **stdio MCP server** for native Google Docs: bounded reading, priv
 
 This is a community project, not an official Google or Nous Research product. The documented launcher requires Bash and a POSIX-style virtual environment; native Windows is not supported by these instructions. Persian formatting is the default; choose `format_profile="plain"` for documents that should not receive Persian formatting. There is no bundled OAuth client, login command, or hosted service.
 
-## Exactly five tools
+## Exactly nine tools
 
 | Tool | Public arguments | Behavior |
 | --- | --- | --- |
@@ -17,8 +17,12 @@ This is a community project, not an official Google or Nous Research product. Th
 | `docs_replace_markdown` | `document`, `markdown`, `expected_revision_id`, `tab_id=null`, `format_profile="persian"` | Replace the selected tab's body while retaining the document ID. This is destructive, not an append or merge. |
 | `docs_edit_text` | `document`, `replacements`, `expected_revision_id`, `tab_id=null`, `apply=false` | Preview exact replacements; write only with `apply=true`. |
 | `docs_insert_text` | `document`, `text`, `expected_revision_id`, `position="end"`, `anchor_text=null`, `tab_id=null`, `format_profile="persian"`, `apply=false` | Preview or insert literal text at the start/end or before/after one exact anchor, without replacing the tab. |
+| `docs_edit_section` | `document`, `markdown`, `expected_revision_id`, `action="insert"`, `position="end"`, `anchor_text=null`, `heading_text=null`, `tab_id=null`, `format_profile="persian"`, `apply=false` | Insert rendered Markdown at paragraph boundaries or replace the content below one heading, preserving the rest. |
+| `docs_format` | `document`, `expected_revision_id`, `tab_id=null`, `heading_text=null`, `format_profile="persian"`, `right_indent_pt=0`, `apply=false` | Repair layout on a whole tab or heading section without rewriting content; supports explicit Persian/English layout. |
+| `docs_manage_tab` | `document`, `expected_revision_id`, `action`, `tab_id=null`, `title=null`, `parent_tab_id=null`, `index=null`, `apply=false` | Create, rename, reorder or reparent tabs; no deletion. |
+| `docs_edit_table` | `document`, `expected_revision_id`, `action`, `table_index`, `row_index=null`, `column_index=null`, `markdown=null`, `side=null`, `tab_id=null`, `format_profile="persian"`, `apply=false` | Edit one cell or insert/delete one row/column; rejects merged/nested targets and last-row/column deletion. |
 
-A replacement is `{"old_text":"…","new_text":"…","expected_count":1}`. Only `persian` and `plain` are valid profile names. Booleans and integer controls use strict MCP input types: pass JSON `false`/`true` and integers, not strings.
+A replacement is `{"old_text":"…","new_text":"…","expected_count":1}`. Content-writing profiles are `persian` and `plain`; only `docs_format` uses `persian` and `english`. Booleans and integer controls use strict MCP input types: pass JSON `false`/`true` and integers, not strings. See [scoped structured editing](docs/structured-editing.md) for the four new tools, selector rules, examples and recovery boundaries.
 
 ### Input limits and document references
 
@@ -71,7 +75,7 @@ Additional normalization matters when preparing a write:
 - Emitted body and table-cell text containing characters that Google `insertText` strips (U+0000–U+0008, U+000C–U+001F, U+E000–U+F8FF), or surrogate code points, is rejected before creation/replacement. This does not change CRLF normalization, ignored frontmatter, or valid Persian half-spaces/emoji.
 - Nonempty Markdown replacement removes inherited native bullets/numbering before applying the selected profile. Markdown bullets/checklists remain literal glyphs. Semantic verification rejects unexpected native lists, including empty paragraphs and table cells. Empty-model replacement retains its no-style-write behavior; this is not a general native-list editing tool.
 
-There are no public tools for arbitrary `batchUpdate`, arbitrary HTTP, sharing/permission changes, deletion, comments, suggestions, named-range workflows, Office conversion, image upload, or free-form table/section/header/footer editing. The internal cleanup/export helpers are not MCP tools. `docs_edit_text` can count and replace matching existing text within the selected tab's body/table cells and auxiliary header/footer/footnote segments; that is not a layout or segment-authoring API.
+There are no public tools for arbitrary `batchUpdate`, arbitrary HTTP, sharing/permission changes, document/tab deletion, comments, suggestions, named-range workflows, Office conversion, image upload, or free-form header/footer editing. Table/section editing is limited to the explicit scoped contracts above, not arbitrary layout manipulation. The internal cleanup/export helpers are not MCP tools. `docs_edit_text` can count and replace matching existing text within the selected tab's body/table cells and auxiliary header/footer/footnote segments; that is not a layout or segment-authoring API.
 
 ### Why not Drive's native Markdown conversion?
 
@@ -137,7 +141,7 @@ Synthetic response excerpt — not the complete response:
 
 The readable body key is **`content`, not `text`**. Selected-tab responses also include `start`, `end`, `total_chars`, and `outline`. Follow `next_start` with the same document and tab until it is `null`; if revisions change between pages, reread rather than treating the pages as one snapshot.
 
-**Privacy boundary:** `max_chars` limits only the returned `content` page, not the complete response. The selected tab's entire heading `outline`, document metadata, and tab inventory are returned separately and are not restricted to that page. Even a one-character page can reveal headings outside the requested range. Do not use pagination as a total-output limit or as permission to disclose only one excerpt.
+**Privacy boundary:** `max_chars` limits only the returned `content` page, not the complete response. The selected tab's entire heading `outline`, table-dimension `tables` inventory, document metadata, and tab inventory are returned separately and are not restricted to that page. Even a one-character page can reveal headings outside the requested range. Do not use pagination as a total-output limit or as permission to disclose only one excerpt.
 
 Metadata fields are `document_id`, `document_url`, `name`, `mime_type`, `modified_time`, `version`, and `revision_id`. Each `tabs` entry contains `tab_id`, `title`, and `parent_tab_id`.
 
@@ -503,7 +507,7 @@ If it already exists, inspect that entry and update its existing launcher/policy
 hermes config set --force mcp_servers.google_docs.timeout 180
 hermes config set --force mcp_servers.google_docs.connect_timeout 30
 hermes config set --force mcp_servers.google_docs.sampling.enabled false
-hermes config set --force mcp_servers.google_docs.tools.include '["docs_read","docs_create","docs_replace_markdown","docs_edit_text","docs_insert_text"]'
+hermes config set --force mcp_servers.google_docs.tools.include '["docs_read","docs_create","docs_replace_markdown","docs_edit_text","docs_insert_text","docs_edit_section","docs_format","docs_manage_tab","docs_edit_table"]'
 ```
 
 The resulting `~/.hermes/config.yaml` entry must match this policy; merge only this server entry, not the whole config:
@@ -524,16 +528,20 @@ mcp_servers:
         - docs_replace_markdown
         - docs_edit_text
         - docs_insert_text
+        - docs_edit_section
+        - docs_format
+        - docs_manage_tab
+        - docs_edit_table
 ```
 
-No credential literals or secret environment values belong in this entry. Read back the exact target entry locally after registration: confirm the launcher, empty args, timeout 180, connect timeout 30, disabled sampling, and exactly the five allowlisted names. Check an existing entry for exclusions or other policy that could prevent those tools from being exposed. Share only safe policy fields and environment **key names**, never values or a full config dump.
+No credential literals or secret environment values belong in this entry. Read back the exact target entry locally after registration: confirm the launcher, empty args, timeout 180, connect timeout 30, disabled sampling, and exactly the nine allowlisted names. Check an existing entry for exclusions or other policy that could prevent those tools from being exposed. Share only safe policy fields and environment **key names**, never values or a full config dump.
 
 ```bash
 hermes mcp list
 hermes mcp test google_docs
 ```
 
-Require the server to be enabled, connection/discovery to succeed, and exactly the five expected tools to be discovered. `hermes mcp test` proves discovery, not Google write correctness. The opt-in insertion acceptance separately checks all five tool paths against Google; offline tests alone are not proof of a live insertion.
+Require the server to be enabled, connection/discovery to succeed, and exactly the nine expected tools to be discovered. `hermes mcp test` proves discovery, not Google write correctness. The opt-in insertion acceptance checks the original five paths; `tests/test_live_structured.py` covers the four structured tools separately. Offline tests alone are not proof of a live write.
 
 After registration or an update, use **`/reload-mcp`** in the running Hermes chat, or start a fresh Hermes chat/process. Then verify the tool inventory. An existing long-lived session is not automatically proven to have new schemas merely because config was saved or a separate CLI test passed. Hermes normally prefixes server tools as `mcp_google_docs_<tool_name>`; use the actual discovered inventory in your client.
 

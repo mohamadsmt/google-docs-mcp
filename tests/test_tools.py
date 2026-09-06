@@ -16,9 +16,21 @@ EXPECTED_TOOLS = [
     "docs_replace_markdown",
     "docs_edit_text",
     "docs_insert_text",
+    "docs_edit_section",
+    "docs_format",
+    "docs_manage_tab",
+    "docs_edit_table",
 ]
 
 EXPECTED_PROPERTIES = {
+    "docs_edit_section": {"document", "markdown", "expected_revision_id", "action", "position",
+                          "anchor_text", "heading_text", "tab_id", "format_profile", "apply"},
+    "docs_format": {"document", "expected_revision_id", "tab_id", "heading_text", "format_profile",
+                    "right_indent_pt", "apply"},
+    "docs_manage_tab": {"document", "expected_revision_id", "action", "tab_id", "title", "parent_tab_id",
+                        "index", "apply"},
+    "docs_edit_table": {"document", "expected_revision_id", "action", "table_index", "row_index",
+                        "column_index", "markdown", "side", "tab_id", "format_profile", "apply"},
     "docs_insert_text": {
         "document", "text", "expected_revision_id", "position", "anchor_text",
         "tab_id", "format_profile", "apply",
@@ -42,6 +54,10 @@ EXPECTED_PROPERTIES = {
 }
 
 EXPECTED_REQUIRED = {
+    "docs_edit_section": {"document", "markdown", "expected_revision_id"},
+    "docs_format": {"document", "expected_revision_id"},
+    "docs_manage_tab": {"document", "expected_revision_id", "action"},
+    "docs_edit_table": {"document", "expected_revision_id", "action", "table_index"},
     "docs_insert_text": {"document", "text", "expected_revision_id"},
     "docs_read": {"document"},
     "docs_create": {"title"},
@@ -54,6 +70,13 @@ EXPECTED_REQUIRED = {
 }
 
 EXPECTED_DEFAULTS = {
+    "docs_edit_section": {"action": "insert", "position": "end", "anchor_text": None,
+                          "heading_text": None, "tab_id": None, "format_profile": "persian", "apply": False},
+    "docs_format": {"tab_id": None, "heading_text": None, "format_profile": "persian",
+                    "right_indent_pt": 0, "apply": False},
+    "docs_manage_tab": {"tab_id": None, "title": None, "parent_tab_id": None, "index": None, "apply": False},
+    "docs_edit_table": {"row_index": None, "column_index": None, "markdown": None, "side": None,
+                        "tab_id": None, "format_profile": "persian", "apply": False},
     "docs_insert_text": {
         "position": "end", "anchor_text": None, "tab_id": None,
         "format_profile": "persian", "apply": False,

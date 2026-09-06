@@ -23,6 +23,10 @@ EXPECTED_TOOLS = [
     "docs_replace_markdown",
     "docs_edit_text",
     "docs_insert_text",
+    "docs_edit_section",
+    "docs_format",
+    "docs_manage_tab",
+    "docs_edit_table",
 ]
 EXPECTED_WRAPPER = """#!/bin/bash
 set -euo pipefail
@@ -35,6 +39,11 @@ EXPECTED_PACKAGE_MODULES = {
     "google_docs_mcp/client.py",
     "google_docs_mcp/markdown.py",
     "google_docs_mcp/server.py",
+    "google_docs_mcp/editing_common.py",
+    "google_docs_mcp/sections.py",
+    "google_docs_mcp/formatting.py",
+    "google_docs_mcp/tabs.py",
+    "google_docs_mcp/tables.py",
 }
 
 

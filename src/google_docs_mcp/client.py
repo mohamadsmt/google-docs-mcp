@@ -3110,6 +3110,8 @@ class GoogleDocsService:
         result["tab_id"] = selected.tab_id
         result.update(paginate(text, start, max_chars))
         result["outline"] = outline
+        from .editing_common import table_inventory
+        result["tables"] = table_inventory(selected.body)
         return result
 
     def create(

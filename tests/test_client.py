@@ -4810,6 +4810,7 @@ def test_task11_read_operation_returns_bounded_native_metadata_and_page(
         "total_chars": 12,
         "next_start": 11,
         "outline": [],
+        "tables": [],
         "verified": True,
     }
     assert client.events == ["metadata", "get_document"]
