@@ -27,6 +27,8 @@ _SEED = """# محفوظ 🧪
 
 متن **محفوظ** و [پیوند](https://example.com/preserve).
 
+- مورد فهرست
+
 # هدف
 
 متن قدیمی
@@ -95,8 +97,10 @@ def _check_layout(body, *, direction, alignment, indent):
         style = paragraph.get("paragraphStyle", {})
         _check(style.get("direction") == direction, "Persian API verification")
         _check(style.get("alignment") == alignment, "Persian API verification")
-        _check(style.get("indentStart", {}).get("magnitude", 0) == 0, "Persian API verification")
-        _check(style.get("indentEnd", {}).get("magnitude", 0) == indent, "Persian API verification")
+        # Docs indentation is logical: indentStart is the physical right in RTL.
+        start_indent, end_indent = (indent, 0) if direction == "RIGHT_TO_LEFT" else (0, indent)
+        _check(style.get("indentStart", {}).get("magnitude", 0) == start_indent, "Persian API verification")
+        _check(style.get("indentEnd", {}).get("magnitude", 0) == end_indent, "Persian API verification")
         if direction == "RIGHT_TO_LEFT":
             for run in live._text_runs(paragraph):
                 _check(run.get("textStyle", {}).get("weightedFontFamily", {}).get("fontFamily") == "Vazirmatn",
@@ -125,7 +129,8 @@ async def _exercise(session, client, document_id, tmp_path):
         live._require_ok(result, "apply")
         _check(result.get("verified") is True, "apply", "format not verified")
         after = client.get_document(document_id)
-        _check(result.get("after_revision_id") == after["revisionId"], "apply", "revision readback mismatch")
+        _check(result.get("after_revision_id", result.get("revision_id")) == after["revisionId"],
+               "apply", "revision readback mismatch")
         if before["revisionId"] != after["revisionId"]:
             stale = await live._call(session, name, {**arguments, "apply": True})
             live._require_error(stale, "stale_revision", "stale guard")
@@ -185,11 +190,11 @@ async def _exercise(session, client, document_id, tmp_path):
 
     root_content = deepcopy(_body(client.get_document(document_id), tab_id))
     created, _, after = await mutate("docs_manage_tab", action="create", title="آرشیو")
-    archive_id = created.get("tab_id")
+    archive_id = created.get("tab", {}).get("tab_id")
     _check(isinstance(archive_id, str) and archive_id != tab_id and archive_id in _tabs(after), "apply")
     await mutate("docs_manage_tab", action="rename", tab_id=archive_id, title="آرشیو تازه")
     child, _, after = await mutate("docs_manage_tab", action="create", title="زیرتب", parent_tab_id=archive_id)
-    child_id = child.get("tab_id")
+    child_id = child.get("tab", {}).get("tab_id")
     _check(_tabs(after)[child_id][1] == archive_id, "apply")
     await mutate("docs_manage_tab", action="move", tab_id=child_id, parent_tab_id=None, index=0)
     await mutate("docs_manage_tab", action="move", tab_id=child_id, parent_tab_id=archive_id, index=0)

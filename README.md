@@ -360,7 +360,7 @@ If you do not already have a compatible token, provisioning one is a separate pr
 
 The token and recovery paths are currently fixed under `Path.home() / ".hermes"`; setting `HERMES_HOME` or selecting a Hermes profile does not relocate them. Run under the intended OS account. You can install and run the offline tests without any Google credentials.
 
-Use an account authorized for the intended documents and Docs/Drive operations. Existing OAuth grants may be broader than the five-tool surface; this server constrains its operations, not the token's global privileges. Keep both files out of source control, tool examples, logs, and config literals. Do not share full environment/config dumps to diagnose startup.
+Use an account authorized for the intended documents and Docs/Drive operations. Existing OAuth grants may be broader than the nine-tool surface; this server constrains its operations, not the token's global privileges. Keep both files out of source control, tool examples, logs, and config literals. Do not share full environment/config dumps to diagnose startup.
 
 The package has no telemetry and sanitizes service errors rather than returning raw Google responses or credentials. Document content is still deliberately returned by `docs_read` and sent to Google for writes; Hermes/session retention and storage backups are separate from this package's recovery cleanup policy.
 
