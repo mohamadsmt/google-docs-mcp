@@ -12,7 +12,7 @@ This is a community project, not an official Google or Nous Research product. Th
 
 | Tool | Public arguments | Behavior |
 | --- | --- | --- |
-| `docs_read` | `document`, `tab_id=null`, `start=0`, `max_chars=30000` | Return metadata, tabs, the current Docs revision, and bounded readable content when a tab is selected. |
+| `docs_read` | `document`, `tab_id=null`, `start=0`, `max_chars=30000` | Return metadata, tabs, the current Docs revision when available, and bounded readable content when a tab is selected. |
 | `docs_create` | `title`, `markdown=""`, `format_profile="persian"` | Create a private native Google document; render and verify nonempty Markdown. |
 | `docs_replace_markdown` | `document`, `markdown`, `expected_revision_id`, `tab_id=null`, `format_profile="persian"` | Replace the selected tab's body while retaining the document ID. This is destructive, not an append or merge. |
 | `docs_edit_text` | `document`, `replacements`, `expected_revision_id`, `tab_id=null`, `apply=false` | Preview exact replacements; write only with `apply=true`. |
@@ -113,6 +113,8 @@ Creation returns `document_id`, `document_url`, `revision_id`, `tab_id`, `semant
 If initial publication fails after creation, the new document is retained for diagnosis, not silently deleted. Its error includes `document_id`, `document_url`, `retained_for_diagnosis=true`, and `failure_code`, with recovery details when available. Inspect that document before retrying creation to avoid duplicates.
 
 ### Read the chosen tab
+
+Google only returns `revisionId` when the caller has edit access. Viewer/commenter documents remain readable: `docs_read` returns `revision_id: null` when Google omits that field. This is not an authentication outage. An explicitly malformed revision field is still rejected. Never substitute Drive `version` for a Docs revision or pass a guessed revision to a write: all existing-document mutations continue to require an available, exact revision. `verified: true` on a read verifies the returned read result, not write permission or a revision-guarded snapshot. See [Google's Document resource](https://developers.google.com/workspace/docs/api/reference/rest/v1/documents#Document).
 
 Call `docs_read`:
 

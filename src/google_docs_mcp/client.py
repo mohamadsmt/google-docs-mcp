@@ -2633,7 +2633,9 @@ def _service_metadata(client: GoogleDocsClient, document_id: str) -> dict:
     return metadata
 
 
-def _service_document(client: GoogleDocsClient, document_id: str) -> dict:
+def _service_document(
+    client: GoogleDocsClient, document_id: str, *, require_revision: bool = True
+) -> dict:
     value: dict | None = None
     failed = False
     try:
@@ -2650,8 +2652,13 @@ def _service_document(client: GoogleDocsClient, document_id: str) -> dict:
         failed
         or value is None
         or value.get("documentId") != document_id
-        or not isinstance(value.get("revisionId"), str)
-        or not value["revisionId"]
+        or (
+            (require_revision or "revisionId" in value)
+            and (
+                not isinstance(value.get("revisionId"), str)
+                or not value["revisionId"]
+            )
+        )
     ):
         raise _google_unavailable()
     return value
@@ -3093,7 +3100,11 @@ class GoogleDocsService:
         validate_max_chars(max_chars)
         metadata = _service_metadata(self._client, document_id)
         _require_native_document(metadata)
-        raw_document = _service_document(self._client, document_id)
+        # Google omits revisionId for viewers/commenters. Only reads may
+        # accept that omission; mutation paths retain the strict default.
+        raw_document = _service_document(
+            self._client, document_id, require_revision=False
+        )
         tabs = _service_tabs(raw_document)
         selected = select_tab(raw_document, tab_id)
         result: dict[str, object] = {
@@ -3104,7 +3115,7 @@ class GoogleDocsService:
             "mime_type": metadata["mimeType"],
             "modified_time": metadata["modifiedTime"],
             "version": metadata["version"],
-            "revision_id": raw_document["revisionId"],
+            "revision_id": raw_document.get("revisionId"),
             "tabs": [_tab_result(tab) for tab in tabs],
             "verified": True,
         }
