@@ -19,6 +19,8 @@ EXPECTED_TOOLS = [
     "docs_format",
     "docs_manage_tab",
     "docs_edit_table",
+    "docs_export",
+    "docs_insert_image",
 ]
 
 

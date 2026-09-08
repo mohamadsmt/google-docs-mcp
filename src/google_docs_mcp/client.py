@@ -3127,6 +3127,8 @@ class GoogleDocsService:
         result["outline"] = outline
         from .editing_common import table_inventory
         result["tables"] = table_inventory(selected.body)
+        from .read_metadata import read_metadata
+        result.update(read_metadata(raw_document, selected.tab_id))
         return result
 
     def create(

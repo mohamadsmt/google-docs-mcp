@@ -8,7 +8,7 @@ A small local **stdio MCP server** for native Google Docs: bounded reading, priv
 
 This is a community project, not an official Google or Nous Research product. The documented launcher requires Bash and a POSIX-style virtual environment; native Windows is not supported by these instructions. Persian formatting is the default; choose `format_profile="plain"` for documents that should not receive Persian formatting. There is no bundled OAuth client, login command, or hosted service.
 
-## Exactly nine tools
+## Exactly eleven tools
 
 | Tool | Public arguments | Behavior |
 | --- | --- | --- |
@@ -21,6 +21,8 @@ This is a community project, not an official Google or Nous Research product. Th
 | `docs_format` | `document`, `expected_revision_id`, `tab_id=null`, `heading_text=null`, `format_profile="persian"`, `right_indent_pt=0`, `apply=false` | Repair layout on a whole tab or heading section without rewriting content; supports explicit Persian/English layout. |
 | `docs_manage_tab` | `document`, `expected_revision_id`, `action`, `tab_id=null`, `title=null`, `parent_tab_id=null`, `index=null`, `apply=false` | Create, rename, reorder or reparent tabs; no deletion. |
 | `docs_edit_table` | `document`, `expected_revision_id`, `action`, `table_index`, `row_index=null`, `column_index=null`, `markdown=null`, `side=null`, `tab_id=null`, `format_profile="persian"`, `apply=false` | Edit one cell or insert/delete one row/column; rejects merged/nested targets and last-row/column deletion. |
+| `docs_export` | `document`, `format="pdf"`, `scope="all_tabs"` | Export native PDF/DOCX into a new private local file, with source-stability and explicit tab-scope checks. |
+| `docs_insert_image` | `document`, `image_uri`, `expected_revision_id`, `position="end"`, `anchor_text=null`, `tab_id=null`, `width_pt=null`, `height_pt=null`, `format_profile="persian"`, `apply=false` | Preview or insert an inline image from a public HTTPS URI without uploading local files or changing sharing. |
 
 A replacement is `{"old_text":"…","new_text":"…","expected_count":1}`. Content-writing profiles are `persian` and `plain`; only `docs_format` uses `persian` and `english`. Booleans and integer controls use strict MCP input types: pass JSON `false`/`true` and integers, not strings. See [scoped structured editing](docs/structured-editing.md) for the four new tools, selector rules, examples and recovery boundaries.
 
@@ -75,7 +77,7 @@ Additional normalization matters when preparing a write:
 - Emitted body and table-cell text containing characters that Google `insertText` strips (U+0000–U+0008, U+000C–U+001F, U+E000–U+F8FF), or surrogate code points, is rejected before creation/replacement. This does not change CRLF normalization, ignored frontmatter, or valid Persian half-spaces/emoji.
 - Nonempty Markdown replacement removes inherited native bullets/numbering before applying the selected profile. Markdown bullets/checklists remain literal glyphs. Semantic verification rejects unexpected native lists, including empty paragraphs and table cells. Empty-model replacement retains its no-style-write behavior; this is not a general native-list editing tool.
 
-There are no public tools for arbitrary `batchUpdate`, arbitrary HTTP, sharing/permission changes, document/tab deletion, comments, suggestions, named-range workflows, Office conversion, image upload, or free-form header/footer editing. Table/section editing is limited to the explicit scoped contracts above, not arbitrary layout manipulation. The internal cleanup/export helpers are not MCP tools. `docs_edit_text` can count and replace matching existing text within the selected tab's body/table cells and auxiliary header/footer/footnote segments; that is not a layout or segment-authoring API.
+There are no public tools for arbitrary `batchUpdate`, arbitrary HTTP, sharing/permission changes, document/tab deletion, comments, suggestions, named-range workflows, Office import/conversion, local-image upload, or free-form header/footer editing. Table/section editing is limited to the explicit scoped contracts above, not arbitrary layout manipulation. The internal cleanup/recovery helpers are not MCP tools; `docs_export` exposes only the two documented output formats. `docs_edit_text` can count and replace matching existing text within the selected tab's body/table cells and auxiliary header/footer/footnote segments; that is not a layout or segment-authoring API. Markdown image syntax remains unsupported; use `docs_insert_image` explicitly.
 
 ### Why not Drive's native Markdown conversion?
 
@@ -143,11 +145,34 @@ Synthetic response excerpt — not the complete response:
 
 The readable body key is **`content`, not `text`**. Selected-tab responses also include `start`, `end`, `total_chars`, and `outline`. Follow `next_start` with the same document and tab until it is `null`; if revisions change between pages, reread rather than treating the pages as one snapshot.
 
-**Privacy boundary:** `max_chars` limits only the returned `content` page, not the complete response. The selected tab's entire heading `outline`, table-dimension `tables` inventory, document metadata, and tab inventory are returned separately and are not restricted to that page. Even a one-character page can reveal headings outside the requested range. Do not use pagination as a total-output limit or as permission to disclose only one excerpt.
+**Privacy boundary:** `max_chars` limits only the returned `content` page, not the complete response. The selected tab's entire heading `outline`, table-dimension `tables` inventory, `links`, `images`, document metadata, and tab inventory are returned separately and are not restricted to that page. Even a one-character page can reveal headings, linked text/destinations and image metadata outside the requested range. Do not use pagination as a total-output limit or as permission to disclose only one excerpt.
 
 Metadata fields are `document_id`, `document_url`, `name`, `mime_type`, `modified_time`, `version`, and `revision_id`. Each `tabs` entry contains `tab_id`, `title`, and `parent_tab_id`.
 
 Reading produces plain readable paragraph text, a separate heading outline, and Markdown-like pipe tables. It does not reconstruct all source Markdown or preserve every style. Unsupported non-text elements are represented with markers such as `⟦NON_TEXT:inlineObjectElement⟧`. Do not feed readback blindly into a full replacement when the document contains content the renderer cannot reproduce.
+
+Selected-tab reads also return `metadata_scope="selected_tab_body"` and:
+
+- `links`: exact visible `text`, a typed `target` (external `url`, heading, bookmark or tab), `tab_id`, and `start_index`/`end_index` in Google **UTF-16 units**, not content-page character offsets. Adjacent styled runs of one contiguous link are joined; separate occurrences are retained. Unknown source indices are `null`, not guessed. Links in body table cells are included; auxiliary headers/footers/footnotes are not. Destinations are returned as source data, never fetched or rewritten.
+- `images`: resolved inline/positioned image `object_id`, `kind`, `tab_id`, source indices when available, title/description, PT size and `source_uri` when supplied. Positioned indices describe the anchor paragraph. Google temporary `contentUri` download links are deliberately omitted because anyone holding one can access the image as the requester. Image pixels/OCR are not returned. Unresolved objects and drawings remain non-text markers, not claimed images.
+
+The link/image projection is limited to 10,000 combined entries, 2,000,000 accumulated source-string characters and 100,000 traversal nodes. Over-budget metadata fails with `read_metadata_limit`; it is never silently truncated. The older text, outline and table limits remain separate.
+
+### Native PDF/DOCX export
+
+`docs_export` accepts `format="pdf"` or `"docx"` and saves a **new**, unencrypted private file below `~/.hermes/google-docs-mcp-exports` (0700 directories, 0600 files). It returns the absolute `path`, MIME type, byte count, SHA-256, document identity, revision when available, scope and covered tab IDs. It cannot overwrite a chosen destination or export arbitrary MIME types. Files are retained for delivery; the recovery cleaner does not delete them. Remove exact unneeded exports yourself after delivery.
+
+The only supported scope, `scope="all_tabs"`, uses the official Drive export endpoint. Root and child-tab coverage in both formats is verified by the opt-in native export tests. Individual tabs cannot be selected; there is no `first_tab` mode. Source identity, Drive version/modified time and available Docs revision are checked before and after export; source drift rejects publication. Read-only access does not require a fabricated Docs revision. Newly edited Docs can precede Drive's metadata update; on `source_changed`, reread before a fresh export. The official export limit is 10 MB. Format/container checks verify the downloaded artifact, not pixel-perfect visual layout or an atomic Google revision-specific export.
+
+Export does not modify Google content, but **does write a local file**; its MCP annotation is not read-only. No document reconstruction, permission change or public download URL is used.
+
+### Public-URL image insertion
+
+`docs_insert_image` takes an explicit public HTTPS `image_uri` (at most 2048 UTF-8 bytes), the reviewed revision, and the same start/end or exact before/after text-anchor positions as literal insertion. Anchors target body/table-cell paragraphs, not headers, footers or footnotes. Width and height are optional finite positive PT values up to 1440; Google fits the image while preserving its aspect ratio. An image occupies one UTF-16 index. No automatic paragraph separators or captions are added.
+
+Preview is the default and performs no image insertion/download. Apply sends one non-replayed revision-guarded batch, verifies the inserted object/position, fitted dimensions, unaffected content/objects/tabs and affected paragraph layout. `persian` sets RTL, physical Right (`START`) and explicit logical indentation; `plain` inherits layout. Existing text/fonts are not rewritten. A timeout or failed verification can follow a successful insertion: reread the exact tab and image inventory before any retry.
+
+**Privacy and capability boundary:** Google fetches the supplied URI; this process never sends its OAuth credentials to the image host, downloads the image locally, uploads private screenshots, hosts images or changes sharing. Lexical URL validation rejects credentials, unsafe schemes/ports and local/private numeric hosts; it is not DNS/socket/redirect control over Google's fetch. Google enforces PNG/JPEG/GIF, less than 50 MB and no more than 25 megapixels. A chart must already be an image at a public URL; local/private files and editable Sheets charts are outside this tool. The source URI is stored in the document: do not use private signed/bearer URLs as if they were public image assets.
 
 ### Preview and apply an exact edit
 
@@ -364,7 +389,7 @@ If you do not already have a compatible token, provisioning one is a separate pr
 
 The token and recovery paths are currently fixed under `Path.home() / ".hermes"`; setting `HERMES_HOME` or selecting a Hermes profile does not relocate them. Run under the intended OS account. You can install and run the offline tests without any Google credentials.
 
-Use an account authorized for the intended documents and Docs/Drive operations. Existing OAuth grants may be broader than the nine-tool surface; this server constrains its operations, not the token's global privileges. Keep both files out of source control, tool examples, logs, and config literals. Do not share full environment/config dumps to diagnose startup.
+Use an account authorized for the intended documents and Docs/Drive operations. Existing OAuth grants may be broader than the eleven-tool surface; this server constrains its operations, not the token's global privileges. Keep both files out of source control, tool examples, logs, and config literals. Do not share full environment/config dumps to diagnose startup.
 
 The package has no telemetry and sanitizes service errors rather than returning raw Google responses or credentials. Document content is still deliberately returned by `docs_read` and sent to Google for writes; Hermes/session retention and storage backups are separate from this package's recovery cleanup policy.
 
@@ -511,7 +536,7 @@ If it already exists, inspect that entry and update its existing launcher/policy
 hermes config set --force mcp_servers.google_docs.timeout 180
 hermes config set --force mcp_servers.google_docs.connect_timeout 30
 hermes config set --force mcp_servers.google_docs.sampling.enabled false
-hermes config set --force mcp_servers.google_docs.tools.include '["docs_read","docs_create","docs_replace_markdown","docs_edit_text","docs_insert_text","docs_edit_section","docs_format","docs_manage_tab","docs_edit_table"]'
+hermes config set --force mcp_servers.google_docs.tools.include '["docs_read","docs_create","docs_replace_markdown","docs_edit_text","docs_insert_text","docs_edit_section","docs_format","docs_manage_tab","docs_edit_table","docs_export","docs_insert_image"]'
 ```
 
 The resulting `~/.hermes/config.yaml` entry must match this policy; merge only this server entry, not the whole config:
@@ -536,16 +561,18 @@ mcp_servers:
         - docs_format
         - docs_manage_tab
         - docs_edit_table
+        - docs_export
+        - docs_insert_image
 ```
 
-No credential literals or secret environment values belong in this entry. Read back the exact target entry locally after registration: confirm the launcher, empty args, timeout 180, connect timeout 30, disabled sampling, and exactly the nine allowlisted names. Check an existing entry for exclusions or other policy that could prevent those tools from being exposed. Share only safe policy fields and environment **key names**, never values or a full config dump.
+No credential literals or secret environment values belong in this entry. Read back the exact target entry locally after registration: confirm the launcher, empty args, timeout 180, connect timeout 30, disabled sampling, and exactly the eleven allowlisted names. Check an existing entry for exclusions or other policy that could prevent those tools from being exposed. Share only safe policy fields and environment **key names**, never values or a full config dump.
 
 ```bash
 hermes mcp list
 hermes mcp test google_docs
 ```
 
-Require the server to be enabled, connection/discovery to succeed, and exactly the nine expected tools to be discovered. `hermes mcp test` proves discovery, not Google write correctness. The opt-in insertion acceptance checks the original five paths; `tests/test_live_structured.py` covers the four structured tools separately. Offline tests alone are not proof of a live write.
+Require the server to be enabled, connection/discovery to succeed, and exactly the eleven expected tools to be discovered. `hermes mcp test` proves discovery, not Google write correctness. The opt-in insertion acceptance checks the original five paths; `tests/test_live_structured.py` covers the four structured tools. `tests/test_live_exports.py` characterizes native PDF/DOCX root/child-tab coverage; `tests/test_live_media.py` exercises link/image readback, image preview/apply/stale/error/lost-response recovery and exports through the installed MCP. Run these only with explicit private synthetic creation/deletion authorization. Offline tests alone are not proof of a live write.
 
 After registration or an update, use **`/reload-mcp`** in the running Hermes chat, or start a fresh Hermes chat/process. Then verify the tool inventory. An existing long-lived session is not automatically proven to have new schemas merely because config was saved or a separate CLI test passed. Hermes normally prefixes server tools as `mcp_google_docs_<tool_name>`; use the actual discovered inventory in your client.
 

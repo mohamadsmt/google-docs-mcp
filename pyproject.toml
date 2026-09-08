@@ -34,6 +34,9 @@ dev = [
 [tool.hatch.build.targets.wheel]
 packages = ["src/google_docs_mcp"]
 only-include = [
+  "src/google_docs_mcp/read_metadata.py",
+  "src/google_docs_mcp/exports.py",
+  "src/google_docs_mcp/images.py",
   "src/google_docs_mcp/editing_common.py",
   "src/google_docs_mcp/sections.py",
   "src/google_docs_mcp/formatting.py",
@@ -47,6 +50,16 @@ only-include = [
 
 [tool.hatch.build.targets.sdist]
 only-include = [
+  "src/google_docs_mcp/read_metadata.py",
+  "src/google_docs_mcp/exports.py",
+  "src/google_docs_mcp/images.py",
+  "tests/test_read_metadata.py",
+  "tests/test_exports.py",
+  "tests/test_images.py",
+  "tests/test_image_ranges.py",
+  "tests/test_media_tools.py",
+  "tests/test_live_exports.py",
+  "tests/test_live_media.py",
   "src/google_docs_mcp/editing_common.py",
   "src/google_docs_mcp/sections.py",
   "src/google_docs_mcp/formatting.py",

@@ -27,6 +27,8 @@ EXPECTED_TOOLS = [
     "docs_format",
     "docs_manage_tab",
     "docs_edit_table",
+    "docs_export",
+    "docs_insert_image",
 ]
 EXPECTED_WRAPPER = """#!/bin/bash
 set -euo pipefail
@@ -44,6 +46,9 @@ EXPECTED_PACKAGE_MODULES = {
     "google_docs_mcp/formatting.py",
     "google_docs_mcp/tabs.py",
     "google_docs_mcp/tables.py",
+    "google_docs_mcp/read_metadata.py",
+    "google_docs_mcp/exports.py",
+    "google_docs_mcp/images.py",
 }
 
 

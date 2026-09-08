@@ -20,9 +20,14 @@ EXPECTED_TOOLS = [
     "docs_format",
     "docs_manage_tab",
     "docs_edit_table",
+    "docs_export",
+    "docs_insert_image",
 ]
 
 EXPECTED_PROPERTIES = {
+    "docs_export": {"document", "format", "scope"},
+    "docs_insert_image": {"document", "image_uri", "expected_revision_id", "position", "anchor_text",
+                          "tab_id", "width_pt", "height_pt", "format_profile", "apply"},
     "docs_edit_section": {"document", "markdown", "expected_revision_id", "action", "position",
                           "anchor_text", "heading_text", "tab_id", "format_profile", "apply"},
     "docs_format": {"document", "expected_revision_id", "tab_id", "heading_text", "format_profile",
@@ -54,6 +59,8 @@ EXPECTED_PROPERTIES = {
 }
 
 EXPECTED_REQUIRED = {
+    "docs_export": {"document"},
+    "docs_insert_image": {"document", "image_uri", "expected_revision_id"},
     "docs_edit_section": {"document", "markdown", "expected_revision_id"},
     "docs_format": {"document", "expected_revision_id"},
     "docs_manage_tab": {"document", "expected_revision_id", "action"},
@@ -70,6 +77,9 @@ EXPECTED_REQUIRED = {
 }
 
 EXPECTED_DEFAULTS = {
+    "docs_export": {"format": "pdf", "scope": "all_tabs"},
+    "docs_insert_image": {"position": "end", "anchor_text": None, "tab_id": None,
+                          "width_pt": None, "height_pt": None, "format_profile": "persian", "apply": False},
     "docs_edit_section": {"action": "insert", "position": "end", "anchor_text": None,
                           "heading_text": None, "tab_id": None, "format_profile": "persian", "apply": False},
     "docs_format": {"tab_id": None, "heading_text": None, "format_profile": "persian",
@@ -154,7 +164,7 @@ def test_server_annotations_fail_closed_for_the_exact_surface() -> None:
     for name in EXPECTED_TOOLS[1:]:
         assert tools[name].annotations.model_dump(exclude_none=True) == {
             "readOnlyHint": False,
-            "destructiveHint": True,
+            "destructiveHint": name != "docs_export",
             "idempotentHint": False,
             "openWorldHint": True,
         }

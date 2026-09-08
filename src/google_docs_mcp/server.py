@@ -21,6 +21,7 @@ from .client import (
 mcp = FastMCP("google-docs", log_level="ERROR")
 
 _RECOVERY_ROOT = Path.home() / ".hermes/google-docs-mcp-recovery"
+_EXPORT_ROOT = Path.home() / ".hermes/google-docs-mcp-exports"
 _service: GoogleDocsService | None = None
 _recovery_purged = False
 
@@ -90,7 +91,9 @@ def docs_read(
     start: StrictInt = 0,
     max_chars: StrictInt = 30_000,
 ) -> dict[str, object]:
-    """Read bounded content, tab metadata, and the current Docs revision."""
+    """Read bounded content and revision plus whole-selected-body link/image
+    inventories. Metadata is outside max_chars; image download tokens are omitted.
+    """
     return _call_service(
         lambda: _get_service().read(
             document,
@@ -312,6 +315,53 @@ def docs_edit_table(
             expected_revision_id=expected_revision_id, action=action, table_index=table_index,
             row_index=row_index, column_index=column_index, markdown=markdown, side=side,
             tab_id=tab_id, format_profile=format_profile, apply=apply,
+        )
+    return _call_service(operation)
+
+
+@mcp.tool(name="docs_export", structured_output=True, annotations=ToolAnnotations(
+    readOnlyHint=False, destructiveHint=False, idempotentHint=False, openWorldHint=True,
+))
+def docs_export(
+    document: str,
+    format: Literal["pdf", "docx"] = "pdf",
+    scope: Literal["all_tabs"] = "all_tabs",
+) -> dict[str, object]:
+    """Export native PDF/DOCX to a new private local file, without Google edits.
+    Native Google export includes all tabs; individual tabs cannot be selected.
+    Local exports are retained; no destination overwrite or automatic cleanup.
+    """
+    def operation() -> dict[str, object]:
+        from .exports import export_document
+        return export_document(_get_service()._client, _EXPORT_ROOT,
+                               document=document, format=format, scope=scope)
+    return _call_service(operation)
+
+
+@mcp.tool(name="docs_insert_image", structured_output=True, annotations=_WRITE_ANNOTATIONS)
+def docs_insert_image(
+    document: str,
+    image_uri: str,
+    expected_revision_id: str,
+    position: Literal["start", "end", "before", "after"] = "end",
+    anchor_text: str | None = None,
+    tab_id: str | None = None,
+    width_pt: Annotated[StrictInt | StrictFloat, Field(gt=0, le=1440, allow_inf_nan=False)] | None = None,
+    height_pt: Annotated[StrictInt | StrictFloat, Field(gt=0, le=1440, allow_inf_nan=False)] | None = None,
+    format_profile: Literal["persian", "plain"] = "persian",
+    apply: StrictBool = False,
+) -> dict[str, object]:
+    """Preview/insert an image from a public HTTPS URI at an exact text position.
+    Google fetches the image; this tool never uploads local files or changes
+    sharing. Dimensions are PT aspect-ratio bounds. Reread after uncertain writes.
+    """
+    def operation() -> dict[str, object]:
+        from .images import insert_image
+        return insert_image(
+            _get_service()._client, document=document, image_uri=image_uri,
+            expected_revision_id=expected_revision_id, position=position,
+            anchor_text=anchor_text, tab_id=tab_id, width_pt=width_pt, height_pt=height_pt,
+            format_profile=format_profile, apply=apply,
         )
     return _call_service(operation)
 

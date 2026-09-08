@@ -4811,6 +4811,9 @@ def test_task11_read_operation_returns_bounded_native_metadata_and_page(
         "next_start": 11,
         "outline": [],
         "tables": [],
+        "links": [],
+        "images": [],
+        "metadata_scope": "selected_tab_body",
         "verified": True,
     }
     assert client.events == ["metadata", "get_document"]
