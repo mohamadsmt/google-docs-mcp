@@ -24,6 +24,8 @@ This is a community project, not an official Google or Nous Research product. Th
 | `docs_export` | `document`, `format="pdf"`, `scope="all_tabs"` | Export native PDF/DOCX into a new private local file, with source-stability and explicit tab-scope checks. |
 | `docs_insert_image` | `document`, `image_uri`, `expected_revision_id`, `position="end"`, `anchor_text=null`, `tab_id=null`, `width_pt=null`, `height_pt=null`, `format_profile="persian"`, `apply=false` | Preview or insert an inline image from a public HTTPS URI without uploading local files or changing sharing. |
 
+Exact edits accept Google's omitted zero-valued `startIndex` in header/footer/footnote text runs, including empty headers. Auxiliary text is still counted and verified; explicit malformed indices and inconsistent UTF-16 spans fail closed.
+
 A replacement is `{"old_text":"…","new_text":"…","expected_count":1}`. Content-writing profiles are `persian` and `plain`; only `docs_format` uses `persian` and `english`. Booleans and integer controls use strict MCP input types: pass JSON `false`/`true` and integers, not strings. See [scoped structured editing](docs/structured-editing.md) for the four new tools, selector rules, examples and recovery boundaries.
 
 ### Input limits and document references

@@ -1934,7 +1934,9 @@ def _append_edit_paragraph_segments(
         if not isinstance(text_run, dict):
             raise TypeError
         content = text_run.get("content")
-        run_start = element.get("startIndex")
+        # Google omits zero-valued startIndex in auxiliary segments.
+        # Keep body indices explicit and validate the full UTF-16 span below.
+        run_start = element.get("startIndex", 0 if segment_id else None)
         run_end = element.get("endIndex")
         if (
             not isinstance(content, str)

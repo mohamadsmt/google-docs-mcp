@@ -3318,6 +3318,76 @@ def _task10_success_response(count: int = 2) -> dict:
     }
 
 
+@pytest.mark.parametrize("field,id_field,segment_id", [
+    ("headers", "headerId", "header.1"),
+    ("footers", "footerId", "footer.1"),
+    ("footnotes", "footnoteId", "footnote.1"),
+])
+@pytest.mark.parametrize("auxiliary_text", ["\n", "OLD\n"])
+def test_edit_text_accepts_omitted_zero_start_in_auxiliary_segments(
+    field: str, id_field: str, segment_id: str, auxiliary_text: str,
+) -> None:
+    documents = []
+    for revision, body_text, aux_text in (
+        ("rev-1", "OLD\n", auxiliary_text),
+        ("rev-2", "NEW\n", auxiliary_text.replace("OLD", "NEW")),
+    ):
+        document = _task10_document(revision, paragraph_parts=(body_text,))
+        paragraph = _task10_paragraph((aux_text,), 0)
+        del paragraph["paragraph"]["elements"][0]["startIndex"]
+        document["tabs"][1]["documentTab"][field] = {
+            segment_id: {id_field: segment_id, "content": [paragraph]},
+        }
+        documents.append(document)
+    count = 1 + auxiliary_text.count("OLD")
+    replacement = client_module.Replacement("OLD", "NEW", count)
+    preview_client = Task10Client([documents[0]])
+    preview = client_module.preview_edits(
+        preview_client, VALID_ID, [replacement], _TASK10_SELECTED_TAB, "rev-1",
+    )
+    preview_replacements = preview["replacements"]
+    assert isinstance(preview_replacements, list)
+    assert preview_replacements[0]["actual_count"] == count
+    assert preview_client.batch_calls == []
+    if count == 2:
+        assert preview_replacements[0]["ranges"][1] == {
+            "segment_id": segment_id, "start_index": 0, "end_index": 3,
+        }
+        mismatch_client = Task10Client([documents[0]])
+        assert_error_code(
+            "match_count_mismatch", client_module.apply_edits,
+            mismatch_client, VALID_ID, [client_module.Replacement("OLD", "NEW", 1)],
+            _TASK10_SELECTED_TAB, "rev-1",
+        )
+        assert mismatch_client.batch_calls == []
+    client = Task10Client(documents, [_task10_success_response(count)])
+    applied = client_module.apply_edits(
+        client, VALID_ID, [replacement], _TASK10_SELECTED_TAB, "rev-1",
+    )
+    assert applied["verified"] is True
+    applied_replacements = applied["replacements"]
+    assert isinstance(applied_replacements, list)
+    assert applied_replacements[0]["occurrences_changed"] == count
+    assert len(client.batch_calls) == 1
+
+
+@pytest.mark.parametrize("start,end", [(None, 1), (False, 1), ("0", 1), (-1, 1), ("omitted", 2)])
+def test_edit_text_rejects_malformed_auxiliary_indices(start: object, end: int) -> None:
+    document = _task10_document_with_segments("rev-1", body_text="OLD\n", header_text="\n")
+    element = document["tabs"][1]["documentTab"]["headers"]["header.1"]["content"][0]["paragraph"]["elements"][0]
+    if start == "omitted":
+        del element["startIndex"]
+    else:
+        element["startIndex"] = start
+    element["endIndex"] = end
+    client = Task10Client([document])
+    assert_error_code(
+        "google_unavailable", client_module.apply_edits, client, VALID_ID,
+        [client_module.Replacement("OLD", "NEW", 1)], _TASK10_SELECTED_TAB, "rev-1",
+    )
+    assert client.batch_calls == []
+
+
 def test_task10_auxiliary_segment_match_mismatch_fails_before_write() -> None:
     before = _task10_document_with_segments(
         "rev-1",
